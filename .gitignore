@@ -1,0 +1,10 @@
+# Directorio de importación de Godot 4
+.godot/
+
+# Archivos de exportación de juegos (pck, exe, zip)
+*.import
+*.pck
+*.exe
+
+# Credenciales locales o variables de entorno (por si usas un .env)
+.env
