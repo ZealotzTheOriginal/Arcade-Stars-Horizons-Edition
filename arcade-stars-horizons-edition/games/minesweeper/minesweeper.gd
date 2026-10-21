@@ -1,9 +1,8 @@
 extends Control
-## Buscaminas multijugador. El host es autoritativo: los clientes solo envían
+## Buscaminas multijugador. El servidor es autoritativo: los clientes solo envían
 ## intenciones (revelar / bandera) y reciben el estado público (`view`).
 ## Contrato con el Hub: el nodo raíz expone `start(players, settings)`.
 
-var _logic: MinesweeperLogic          # solo en el host
 var _view: Dictionary = {}
 var _board: MineBoard
 var _turn_label: Label
@@ -21,49 +20,15 @@ func _ready() -> void:
 	_build()
 
 ## Llamado por GameLoader cuando la escena ya está en el árbol.
-func start(players: Dictionary, settings: Dictionary) -> void:
+func start(_players: Dictionary, _settings: Dictionary) -> void:
 	if not _built:
 		_build()
-	Net.players_changed.connect(_on_players_changed)
-	if multiplayer.is_server():
-		_logic = MinesweeperLogic.new(settings.get("board_size", "normal"), players.keys())
-		_push_view()
-	else:
-		_client_ready.rpc_id(1)
+	Net.game_view.connect(_apply_view)
+	Net.send_game_ready()
 
-# ── Red ──────────────────────────────────────────────────
-
-@rpc("any_peer", "reliable")
-func _client_ready() -> void:
-	if multiplayer.is_server() and _logic:
-		_apply_view.rpc_id(multiplayer.get_remote_sender_id(), _logic.view())
-
-@rpc("any_peer", "reliable")
-func _request_action(row: int, col: int, flag: bool) -> void:
-	if not multiplayer.is_server() or _logic == null:
-		return
-	var sender := multiplayer.get_remote_sender_id()
-	if sender == 0:
-		sender = 1
-	var changed := _logic.toggle_flag(sender, row, col) if flag else _logic.reveal(sender, row, col)
-	if changed:
-		_push_view()
-
-@rpc("authority", "call_local", "reliable")
 func _apply_view(v: Dictionary) -> void:
 	_view = v
 	_refresh()
-
-func _push_view() -> void:
-	_apply_view.rpc(_logic.view())      # call_local: el host también lo aplica
-
-func _on_players_changed() -> void:
-	if not multiplayer.is_server() or _logic == null:
-		return
-	for id in _logic.order.duplicate():
-		if not Net.players.has(id):
-			_logic.remove_player(id)
-	_push_view()
 
 # ── Entrada del tablero ──────────────────────────────────
 
@@ -74,10 +39,7 @@ func _on_flag(row: int, col: int) -> void:
 	_send_action(row, col, true)
 
 func _send_action(row: int, col: int, flag: bool) -> void:
-	if multiplayer.is_server():
-		_request_action(row, col, flag)
-	else:
-		_request_action.rpc_id(1, row, col, flag)
+	Net.send_game_action({"row": row, "col": col, "flag": flag})
 
 # ── UI ───────────────────────────────────────────────────
 
@@ -103,7 +65,7 @@ func _build() -> void:
 	side_panel.add_child(sv)
 	var title := Label.new()
 	title.theme_type_variation = "HeadLabel"
-	title.text = "Buscaminas"
+	title.text = "Minesweeper"
 	sv.add_child(title)
 	_turn_label = Label.new()
 	_turn_label.theme_type_variation = "HeadLabel"
@@ -115,23 +77,18 @@ func _build() -> void:
 	sv.add_child(_flags_label)
 	var sl := Label.new()
 	sl.theme_type_variation = "MutedLabel"
-	sl.text = "PUNTUACIÓN"
+	sl.text = "SCORE"
 	sv.add_child(sl)
 	_score_box = VBoxContainer.new()
 	_score_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_score_box.add_theme_constant_override("separation", 6)
 	sv.add_child(_score_box)
-	var help := Label.new()
-	help.theme_type_variation = "MutedLabel"
-	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	help.text = "Clic izq.: revelar (+5 por casilla)\nClic der.: bandera\nPisar una mina termina la partida."
-	sv.add_child(help)
 	_back_btn = Button.new()
 	_back_btn.theme_type_variation = "PrimaryButton"
 	_back_btn.pressed.connect(_on_back_pressed)
 	sv.add_child(_back_btn)
 	var quit := Button.new()
-	quit.text = "Abandonar"
+	quit.text = "Leave"
 	quit.pressed.connect(func(): Net.leave())
 	sv.add_child(quit)
 
@@ -174,12 +131,12 @@ func _refresh() -> void:
 	var turn: int = _view["turn"]
 	var mine := turn == Net.my_id()
 	_board.interactive = mine and not over
-	_flags_label.text = "Minas restantes: %d" % _view["flags_left"]
+	_flags_label.text = "Mines left: %d" % _view["flags_left"]
 	if over:
-		_turn_label.text = "Partida terminada"
+		_turn_label.text = "Game over"
 		_turn_label.add_theme_color_override("font_color", Palette.FG_100)
 	else:
-		_turn_label.text = "Tu turno" if mine else "Turno de %s" % Net.player_name(turn)
+		_turn_label.text = "Your turn" if mine else "%s's turn" % Net.player_name(turn)
 		_turn_label.add_theme_color_override("font_color", Net.player_color(turn))
 
 	for c in _score_box.get_children():
@@ -194,17 +151,17 @@ func _refresh() -> void:
 		var wname := Net.player_name(winner)
 		match _view["reason"]:
 			"mine":
-				_banner_title.text = "¡BOOM!"
-				_banner_sub.text = "%s pisó una mina. Gana %s." % [Net.player_name(_view["exploded_by"]), wname]
+				_banner_title.text = "BOOM!"
+				_banner_sub.text = "%s hit a mine. %s wins." % [Net.player_name(_view["exploded_by"]), wname]
 			"cleared":
-				_banner_title.text = "Tablero despejado"
-				_banner_sub.text = "Gana %s." % wname
+				_banner_title.text = "Board cleared"
+				_banner_sub.text = "%s wins." % wname
 			_:
-				_banner_title.text = "Rivales desconectados"
-				_banner_sub.text = "Gana %s." % wname
+				_banner_title.text = "Opponents left"
+				_banner_sub.text = "%s wins." % wname
 		_banner_title.add_theme_color_override("font_color", MineBoard.DANGER if _view["reason"] == "mine" else Palette.ACC_GREEN)
-	_back_btn.text = "Volver a la sala" if multiplayer.is_server() else "Esperando al host…"
-	_back_btn.disabled = not (over and multiplayer.is_server())
+	_back_btn.text = "Back to room" if Net.is_host() else "Waiting for host…"
+	_back_btn.disabled = not (over and Net.is_host())
 	_back_btn.visible = true
 
 func _score_row(id: int, score: int, active: bool) -> Control:
@@ -223,7 +180,7 @@ func _score_row(id: int, score: int, active: bool) -> Control:
 	dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(dot)
 	var n := Label.new()
-	n.text = Net.player_name(id) + (" (tú)" if id == Net.my_id() else "")
+	n.text = Net.player_name(id) + (" (you)" if id == Net.my_id() else "")
 	n.clip_text = true
 	n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(n)

@@ -17,6 +17,8 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+Auth="*res://scripts/net/auth.gd"
+Backend="*res://scripts/net/backend.gd"
 Net="*res://scripts/net/net.gd"
 Lobby="*res://scripts/net/lobby.gd"
 GameLoader="*res://scripts/net/game_loader.gd"

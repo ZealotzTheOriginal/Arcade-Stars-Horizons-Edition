@@ -1,27 +1,9 @@
 extends Node
-## Registro de minijuegos y carga dinámica. Cada juego se distribuye como
-## `<id>.pck` (res://games/<id>/...) y se monta en runtime con load_resource_pack.
+## Carga dinámica de minijuegos. Cada juego se distribuye como `<id>.pck`
+## (res://games/<id>/...) y se monta en runtime con load_resource_pack.
 ## Si no hay .pck, se usa la copia embebida en el proyecto (modo desarrollo).
 
 const HUB_SCENE := "res://scenes/main.tscn"
-
-## id -> metadatos. `scene` es la escena raíz dentro del .pck / proyecto.
-const GAMES := {
-	"minesweeper": {
-		"name": "Buscaminas",
-		"description": "Por turnos. Revela casillas, suma puntos, evita las minas.",
-		"scene": "res://games/minesweeper/minesweeper.tscn",
-		"min_players": 2,
-		"max_players": 4,
-		"settings": [
-			{"key": "board_size", "label": "TABLERO", "default": "normal", "options": [
-				["normal", "Normal 9×9 · 10 minas"],
-				["intermediate", "Intermedio 16×16 · 40 minas"],
-				["expert", "Experto 30×16 · 99 minas"],
-			]},
-		],
-	},
-}
 
 var _mounted: Dictionary = {}
 
@@ -37,15 +19,14 @@ func pck_search_paths(game_id: String) -> Array[String]:
 	]
 
 func launch(game_id: String, settings: Dictionary) -> void:
-	var info: Dictionary = GAMES.get(game_id, {})
+	var info: Dictionary = GameRegistry.GAMES.get(game_id, {})
 	if info.is_empty():
-		push_error("Juego desconocido: " + game_id)
+		push_error("Unknown game: " + game_id)
 		return
 	if not _mount(game_id) and not ResourceLoader.exists(info["scene"]):
-		push_error("No se encontró %s (ni .pck ni escena embebida)" % game_id)
+		push_error("Game not found (no .pck or embedded scene): " + game_id)
 		return
-	var packed := load(info["scene"]) as PackedScene
-	get_tree().change_scene_to_packed(packed)
+	get_tree().change_scene_to_packed(load(info["scene"]) as PackedScene)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var game := get_tree().current_scene

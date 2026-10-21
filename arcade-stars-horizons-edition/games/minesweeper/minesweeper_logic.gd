@@ -1,7 +1,7 @@
 class_name MinesweeperLogic
 extends RefCounted
 ## Reglas del Buscaminas competitivo por turnos (port de backend/app/games/minesweeper).
-## Solo lo instancia el host; los clientes reciben `view()`.
+## Solo lo instancia el servidor; los clientes reciben `view()`.
 
 const POINTS_PER_CELL := 5
 const POINTS_WIN_BONUS := 50
@@ -31,8 +31,8 @@ var exploded_by := 0
 var exploded_cell := -1
 var reason := ""                     # "mine" | "cleared" | "alone"
 
-func _init(board_size: String, peer_ids: Array) -> void:
-	var s: Vector3i = SIZES.get(board_size, SIZES["normal"])
+func _init(settings: Dictionary, peer_ids: Array) -> void:
+	var s: Vector3i = SIZES.get(settings.get("board_size", "normal"), SIZES["normal"])
 	cols = s.x
 	rows = s.y
 	mines = s.z
@@ -42,6 +42,23 @@ func _init(board_size: String, peer_ids: Array) -> void:
 		order.append(int(id))
 		scores[int(id)] = 0
 	order.sort()
+
+## Interfaz común de módulos de juego del servidor.
+func handle_action(pid: int, payload: Dictionary) -> bool:
+	var row: Variant = payload.get("row")
+	var col: Variant = payload.get("col")
+	if not (row is int and col is int):
+		return false
+	return toggle_flag(pid, row, col) if payload.get("flag", false) == true else reveal(pid, row, col)
+
+func is_over() -> bool:
+	return over
+
+## Resultado para estadísticas. Vacío si la partida no cuenta (rivales desconectados).
+func results() -> Array:
+	if reason == "alone":
+		return []
+	return order.map(func(id): return {"pid": id, "score": scores[id], "is_winner": id == winner})
 
 func current_player() -> int:
 	return order[turn_idx % order.size()] if not order.is_empty() else 0

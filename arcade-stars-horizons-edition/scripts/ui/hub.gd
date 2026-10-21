@@ -2,9 +2,11 @@ extends Control
 ## Hub principal: presencia online, lista de salas y sala actual.
 
 const ROOM_NAMES := [
-	"Nebulosa Orión", "Cúmulo Pléyades", "Horizonte Vega", "Órbita Sirio",
-	"Cinturón Kuiper", "Aurora Boreal", "Púlsar Rojo", "Galaxia Andrómeda",
+	"Orion Nebula", "Pleiades Cluster", "Vega Horizon", "Sirius Orbit",
+	"Kuiper Belt", "Aurora Borealis", "Red Pulsar", "Andromeda",
 ]
+const ROOM_NAME_PATTERN := "^[A-Za-z0-9_\\- ]{3,24}$"
+const ERROR_COLOR := Color("#FF7A8A")
 
 var _users_box: VBoxContainer
 var _rooms_box: VBoxContainer
@@ -16,9 +18,8 @@ var _room_players: VBoxContainer
 var _game_select: OptionButton
 var _settings_box: VBoxContainer
 var _start_btn: Button
-var _room_hint: Label
+var _create_btn: Button
 var _status: Label
-var _ip_input: LineEdit
 var _room_name_input: LineEdit
 var _name_input: LineEdit
 
@@ -32,12 +33,16 @@ func _ready() -> void:
 	Net.room_changed.connect(_refresh_room)
 	Net.connected_to_room.connect(_show_view)
 	Net.left_room.connect(_on_left_room)
-	Net.connection_failed.connect(func(): _set_status("No se pudo conectar", true))
+	Net.server_error.connect(func(m): _set_status(m, true))
+	Backend.status_changed.connect(_on_backend_status)
 	_show_view()
 	_refresh_users()
 	_refresh_rooms()
 	_refresh_room()
-	_set_status(Net.last_leave_reason)
+	_on_backend_status()
+	if Net.last_leave_reason != "":
+		_set_status(Net.last_leave_reason, true)
+	Backend.start()
 
 # ── Construcción de UI ───────────────────────────────────
 
@@ -90,8 +95,8 @@ func _build_header() -> Control:
 	_name_input = LineEdit.new()
 	_name_input.text = Net.local_name
 	_name_input.custom_minimum_size.x = 180
-	_name_input.max_length = 18
-	_name_input.placeholder_text = "Tu nombre"
+	_name_input.max_length = 16
+	_name_input.placeholder_text = "Nickname"
 	_name_input.text_submitted.connect(_apply_name)
 	_name_input.focus_exited.connect(func(): _apply_name(_name_input.text))
 	h.add_child(_name_input)
@@ -106,7 +111,7 @@ func _build_users_panel() -> Control:
 	p.add_child(v)
 	var t := Label.new()
 	t.theme_type_variation = "MutedLabel"
-	t.text = "EN LÍNEA"
+	t.text = "ONLINE"
 	v.add_child(t)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -130,18 +135,21 @@ func _build_lobby_view() -> Control:
 	v.add_child(top)
 	var t := Label.new()
 	t.theme_type_variation = "HeadLabel"
-	t.text = "Salas"
+	t.text = "Rooms"
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(t)
 	_room_name_input = LineEdit.new()
 	_room_name_input.text = ROOM_NAMES.pick_random()
+	_room_name_input.max_length = 24
+	_room_name_input.placeholder_text = "Room name"
 	_room_name_input.custom_minimum_size.x = 220
+	_room_name_input.text_submitted.connect(func(_t): _on_create_pressed())
 	top.add_child(_room_name_input)
-	var create := Button.new()
-	create.theme_type_variation = "PrimaryButton"
-	create.text = "Crear sala"
-	create.pressed.connect(_on_create_pressed)
-	top.add_child(create)
+	_create_btn = Button.new()
+	_create_btn.theme_type_variation = "PrimaryButton"
+	_create_btn.text = "Create room"
+	_create_btn.pressed.connect(_on_create_pressed)
+	top.add_child(_create_btn)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -152,29 +160,12 @@ func _build_lobby_view() -> Control:
 	scroll.add_child(inner)
 	_rooms_empty = Label.new()
 	_rooms_empty.theme_type_variation = "MutedLabel"
-	_rooms_empty.text = "No hay salas visibles. Crea una o conéctate por IP."
+	_rooms_empty.text = "No rooms yet"
 	inner.add_child(_rooms_empty)
 	_rooms_box = VBoxContainer.new()
 	_rooms_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rooms_box.add_theme_constant_override("separation", 8)
 	inner.add_child(_rooms_box)
-
-	var direct := HBoxContainer.new()
-	direct.add_theme_constant_override("separation", 10)
-	v.add_child(direct)
-	var dl := Label.new()
-	dl.theme_type_variation = "MutedLabel"
-	dl.text = "CONEXIÓN DIRECTA"
-	direct.add_child(dl)
-	_ip_input = LineEdit.new()
-	_ip_input.text = "127.0.0.1"
-	_ip_input.placeholder_text = "IP del host"
-	_ip_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	direct.add_child(_ip_input)
-	var go := Button.new()
-	go.text = "Unirse"
-	go.pressed.connect(func(): _join(_ip_input.text.strip_edges(), Net.DEFAULT_PORT))
-	direct.add_child(go)
 	return p
 
 func _build_room_view() -> Control:
@@ -191,17 +182,17 @@ func _build_room_view() -> Control:
 	_room_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_room_title)
 	var leave := Button.new()
-	leave.text = "Salir de la sala"
+	leave.text = "Leave room"
 	leave.pressed.connect(func(): Net.leave())
 	top.add_child(leave)
 
 	var gl := Label.new()
 	gl.theme_type_variation = "MutedLabel"
-	gl.text = "JUEGO"
+	gl.text = "GAME"
 	v.add_child(gl)
 	_game_select = OptionButton.new()
-	for id in GameLoader.GAMES:
-		_game_select.add_item(GameLoader.GAMES[id]["name"])
+	for id in GameRegistry.GAMES:
+		_game_select.add_item(GameRegistry.game_name(id))
 		_game_select.set_item_metadata(_game_select.item_count - 1, id)
 	_game_select.item_selected.connect(func(i): Net.set_room_game(_game_select.get_item_metadata(i)))
 	v.add_child(_game_select)
@@ -212,19 +203,16 @@ func _build_room_view() -> Control:
 
 	var pl := Label.new()
 	pl.theme_type_variation = "MutedLabel"
-	pl.text = "JUGADORES"
+	pl.text = "PLAYERS"
 	v.add_child(pl)
 	_room_players = VBoxContainer.new()
 	_room_players.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_room_players.add_theme_constant_override("separation", 8)
 	v.add_child(_room_players)
 
-	_room_hint = Label.new()
-	_room_hint.theme_type_variation = "MutedLabel"
-	v.add_child(_room_hint)
 	_start_btn = Button.new()
 	_start_btn.theme_type_variation = "PrimaryButton"
-	_start_btn.text = "Iniciar partida"
+	_start_btn.text = "Start game"
 	_start_btn.pressed.connect(func(): Net.start_game())
 	v.add_child(_start_btn)
 	return p
@@ -236,14 +224,21 @@ func _show_view() -> void:
 	_room_view.visible = Net.in_room
 	_refresh_room()
 
+func _on_backend_status() -> void:
+	var online := Backend.is_online()
+	_create_btn.disabled = not online
+	_set_status("" if online else Backend.status_text, not online and Backend.state == Backend.State.OFFLINE and Backend.status_text != "")
+	_name_input.text = Net.local_name
+	_refresh_rooms()
+	_refresh_users()
+
 func _refresh_users() -> void:
 	for c in _users_box.get_children():
 		c.queue_free()
-	_users_box.add_child(_user_row(Net.local_name + " (tú)", Palette.ACC_GREEN, Net.room.get("name", "") if Net.in_room else ""))
-	for sid in Lobby.users:
-		var u: Dictionary = Lobby.users[sid]
-		var room_name: String = u["room"]["name"] if u["room"] is Dictionary else ""
-		_users_box.add_child(_user_row(u["name"], Palette.ACC_BLUE, room_name))
+	for id in Lobby.users:
+		var u: Dictionary = Lobby.users[id]
+		var is_me: bool = id == Net.my_id()
+		_users_box.add_child(_user_row(u["name"] + (" (you)" if is_me else ""), Palette.ACC_GREEN if is_me else Palette.ACC_BLUE, u["room_name"]))
 
 func _user_row(uname: String, dot: Color, room_name: String) -> Control:
 	var row := HBoxContainer.new()
@@ -288,22 +283,21 @@ func _room_card(r: Dictionary) -> Control:
 	n.add_theme_font_size_override("font_size", 20)
 	n.text = r["name"]
 	info.add_child(n)
-	var game_name: String = GameLoader.GAMES.get(r["game_id"], {}).get("name", r["game_id"])
 	var d := Label.new()
 	d.theme_type_variation = "MutedLabel"
-	d.text = "%s · host %s · %d/%d jugadores%s" % [game_name, r["host_name"], r["players"], r["max"], " · en partida" if r["in_game"] else ""]
+	d.text = "%s · host %s · %d/%d%s" % [GameRegistry.game_name(r["game_id"]), r["host_name"], r["players"], r["max"], " · in game" if r["in_game"] else ""]
 	info.add_child(d)
 	var b := Button.new()
-	b.text = "Unirse"
-	b.disabled = r["in_game"] or r["players"] >= r["max"]
-	b.pressed.connect(func(): _join(r["ip"], r["port"]))
+	b.text = "Join"
+	b.disabled = r["in_game"] or r["players"] >= r["max"] or not Backend.is_online()
+	b.pressed.connect(func(): Net.join_room(r["id"]))
 	h.add_child(b)
 	return card
 
 func _refresh_room() -> void:
 	if not Net.in_room:
 		return
-	_room_title.text = Net.room.get("name", "Sala")
+	_room_title.text = Net.room.get("name", "Room")
 	var idx := 0
 	for i in _game_select.item_count:
 		if _game_select.get_item_metadata(i) == Net.room.get("game_id"):
@@ -315,18 +309,14 @@ func _refresh_room() -> void:
 		c.queue_free()
 	for id in Net.players:
 		_room_players.add_child(_player_card(id))
-	var info: Dictionary = GameLoader.GAMES.get(Net.room.get("game_id", ""), {})
-	var enough: bool = Net.players.size() >= info.get("min_players", 1)
+	var info: Dictionary = GameRegistry.GAMES.get(Net.room.get("game_id", ""), {})
 	_start_btn.visible = Net.is_host()
-	_start_btn.disabled = not enough
-	_room_hint.text = info.get("description", "") if enough else "Se necesitan %d jugadores para empezar." % info.get("min_players", 1)
-	if not Net.is_host():
-		_room_hint.text = "Esperando a que el host inicie la partida…"
+	_start_btn.disabled = Net.players.size() < info.get("min_players", 1)
 
 func _refresh_settings() -> void:
 	for c in _settings_box.get_children():
 		c.queue_free()
-	var schema: Array = GameLoader.GAMES.get(Net.room.get("game_id", ""), {}).get("settings", [])
+	var schema: Array = GameRegistry.GAMES.get(Net.room.get("game_id", ""), {}).get("settings", [])
 	var current: Dictionary = Net.room.get("settings", {})
 	for s in schema:
 		var l := Label.new()
@@ -358,10 +348,10 @@ func _player_card(id: int) -> Control:
 	dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(dot)
 	var l := Label.new()
-	l.text = Net.player_name(id) + ("  (tú)" if id == Net.my_id() else "")
+	l.text = Net.player_name(id) + ("  (you)" if id == Net.my_id() else "")
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(l)
-	if id == 1:
+	if id == Net.room.get("host_id"):
 		var tag := Label.new()
 		tag.theme_type_variation = "MutedLabel"
 		tag.text = "HOST"
@@ -372,35 +362,30 @@ func _player_card(id: int) -> Control:
 
 func _apply_name(new_name: String) -> void:
 	new_name = new_name.strip_edges()
-	if new_name != "" and new_name != Net.local_name and not Net.in_room:
-		Net.local_name = new_name
-		_refresh_users()
-	_name_input.text = Net.local_name
+	if new_name == Net.local_name or Net.in_room:
+		_name_input.text = Net.local_name
+		return
+	if not Net.is_valid_nickname(new_name):
+		_set_status("Nickname: 3-16 letters, numbers, spaces, - or _", true)
+		_name_input.text = Net.local_name
+		return
+	Net.local_name = new_name
+	if Backend.is_online():
+		Net.set_nickname(new_name)
 
 func _on_create_pressed() -> void:
 	var rname := _room_name_input.text.strip_edges()
-	if rname == "":
-		rname = ROOM_NAMES.pick_random()
-	# Varias salas en un mismo PC: probar puertos consecutivos.
-	for i in 10:
-		if Net.host_room(rname, GameLoader.GAMES.keys()[0], Net.DEFAULT_PORT + i) == OK:
-			_set_status("")
-			return
-	_set_status("No se pudo abrir la sala (puertos ocupados)", true)
-
-func _join(ip: String, port: int) -> void:
-	if ip == "":
+	if RegEx.create_from_string(ROOM_NAME_PATTERN).search(rname) == null:
+		_set_status("Room name: 3-24 letters, numbers, spaces, - or _", true)
 		return
-	_set_status("Conectando a %s…" % ip)
-	var err := Net.join_room(ip, port)
-	if err != OK:
-		_set_status("Error de conexión (%d)" % err, true)
+	_set_status("")
+	Net.create_room(rname, GameRegistry.GAMES.keys()[0])
 
 func _on_left_room(reason: String) -> void:
-	_set_status(reason)
+	_set_status(reason, reason != "")
 	_room_name_input.text = ROOM_NAMES.pick_random()
 	_show_view()
 
 func _set_status(text: String, error: bool = false) -> void:
 	_status.text = text
-	_status.add_theme_color_override("font_color", Color("#FF7A8A") if error else Palette.fade(Palette.FG_200, 0.55))
+	_status.add_theme_color_override("font_color", ERROR_COLOR if error else Palette.fade(Palette.FG_200, 0.55))
