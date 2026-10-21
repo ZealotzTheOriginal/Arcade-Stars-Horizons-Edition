@@ -5,7 +5,7 @@ const SUPABASE_URL := "https://rjmcdqkwisyipsogbfqw.supabase.co"
 const SUPABASE_PUBLISHABLE_KEY := "sb_publishable_uNr7dHS9oRfnJMzaftlPQA_EPeurety"
 
 ## URL pública del servidor en Render (wss://...). Vacío = servidor local de desarrollo.
-const SERVER_URL := ""
+const SERVER_URL := "wss://arcade-stars-horizons-edition.onrender.com"
 const LOCAL_SERVER_URL := "ws://127.0.0.1:9080"
 
 ## Prioridad: variable de entorno ASH_SERVER_URL > SERVER_URL > servidor local.
