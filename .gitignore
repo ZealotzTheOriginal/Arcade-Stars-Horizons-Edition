@@ -8,3 +8,6 @@
 
 # Credenciales locales o variables de entorno (por si usas un .env)
 .env
+
+# Backups
+*.rar
