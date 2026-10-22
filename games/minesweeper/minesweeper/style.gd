@@ -2,7 +2,7 @@ extends RefCounted
 ## Estilo propio del Buscaminas: paleta, fuente, tema y fondo. Es independiente del hub
 ## (el hub puede cambiar su estética sin afectar a este juego). Retoca aquí el aspecto del juego.
 
-const FONT := preload("res://minesweeper/assets/SpaceGrotesk.ttf")
+const FONT := preload("res://minesweeper/assets/Inter.ttf")
 const Background = preload("res://minesweeper/background.gd")
 
 const PALETTE := {
@@ -18,7 +18,7 @@ static var _fonts: Dictionary = {}
 static func fade(c: Color, alpha: float) -> Color:
 	return Color(c.r, c.g, c.b, alpha)
 
-## Space Grotesk variable con peso y espaciado dados: MAYÚSCULAS y jerarquía solo por peso.
+## Inter variable con peso y espaciado dados: MAYÚSCULAS y jerarquía solo por peso.
 static func font(weight: int, spacing: int = 0) -> FontVariation:
 	var key := "%d|%d" % [weight, spacing]
 	if not _fonts.has(key):

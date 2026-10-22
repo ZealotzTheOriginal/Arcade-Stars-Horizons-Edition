@@ -49,6 +49,9 @@ func _ready() -> void:
 	win.dpi_changed.connect(_apply_scale)
 	_apply_scale()
 	_last_pos = Vector2(DisplayServer.window_get_position())
+	# La ventana nace mínima (8x8, transparente) para que el arranque del motor no se vea ni capture clics;
+	# splash o enter_launcher le dan su tamaño. Si nadie lo hace, esta red de seguridad la deja visible.
+	get_tree().create_timer(2.5).timeout.connect(_ensure_on_screen)
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -79,17 +82,35 @@ func begin_splash() -> void:
 	set_mode(Mode.HIDDEN)
 	_place_window(Vector2(560, 420))
 
-## Fin del splash: ventana opaca con el tamaño del launcher, barra de ventana y tamaño mínimo.
+## Fin del splash: la ventana se mantiene transparente (el fondo del hub es opaco) para no tener
+## que cambiar de modo, que provocaba un destello blanco. Tamaño del launcher, barra y tamaño mínimo.
 func end_splash() -> void:
 	if not _splash:
 		return
 	_splash = false
-	var win := get_window()
-	win.transparent = false
-	get_viewport().transparent_bg = false
 	_apply_scale()
 	set_mode(Mode.BAR)
 	_place_window(Vector2(1280, 720))
+
+## Entra al launcher: carga el hub (invisible), redimensiona la ventana con el hub ya construido y
+## solo entonces lo muestra con un fundido. Corre aquí (autoload) porque el splash se libera al cambiar de escena.
+func enter_launcher(hub: PackedScene) -> void:
+	Engine.set_meta("fade_in_hub", true)
+	get_tree().change_scene_to_packed(hub)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	end_splash()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var scene := get_tree().current_scene
+	if scene and scene.has_method("fade_in"):
+		scene.fade_in()
+
+func _ensure_on_screen() -> void:
+	if get_tree().current_scene and get_tree().current_scene.scene_file_path.ends_with("splash.tscn"):
+		return    # el splash gestiona la ventana
+	if DisplayServer.window_get_size().x < 400:
+		_place_window(Vector2(1280, 720))
 
 func _place_window(logical_size: Vector2) -> void:
 	var usable := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
@@ -145,6 +166,7 @@ func _build_bar(root: Control) -> void:
 	h.add_child(logo)
 	var title := CapsLabel.new()
 	title.theme_type_variation = "HeadLabel"
+	title.add_theme_font_override("font", AppTheme.brand_font(1))    # wordmark en Space Grotesk
 	title.add_theme_font_size_override("font_size", 15)
 	title.text = "ARCADE STARS"
 	title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -311,7 +333,7 @@ func _apply_snap(snap: Snap, usable: Rect2i) -> void:
 		Snap.RIGHT:
 			rect = Rect2i(usable.position + Vector2i(half, 0), Vector2i(usable.size.x - half, usable.size.y))
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-	DisplayServer.window_set_size(rect.size)
+	DisplayServer.window_set_size(rect.size)    # tamaño y luego posición (el orden inverso deja 2 px de menos)
 	DisplayServer.window_set_position(rect.position)
 	_snap = snap
 	_refresh_state()

@@ -72,56 +72,50 @@ func _game_card(id: String) -> Control:
 	var card := PanelContainer.new()
 	card.theme_type_variation = "CardPanel"
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 12)
+	h.add_theme_constant_override("separation", 10)
 	card.add_child(h)
 
 	var info := VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.custom_minimum_size.x = 0
 	h.add_child(info)
 	var n := CapsLabel.new()
 	n.theme_type_variation = "HeadLabel"
-	n.add_theme_font_size_override("font_size", 20)
+	n.add_theme_font_size_override("font_size", 18)
 	n.text = GameRegistry.game_name(id)
+	n.clip_text = true
 	info.add_child(n)
 	var d := CapsLabel.new()
 	d.theme_type_variation = "MutedLabel"
 	d.text = "v" + GameRegistry.version_of(id)
-	if state == "update":
-		d.text += " · installed v" + GameLoader.installed[id]["version"]
 	info.add_child(d)
-
-	var tag := CapsLabel.new()
-	tag.theme_type_variation = "MutedLabel"
-	match state:
-		"installed":
-			tag.text = "INSTALLED"
-			tag.add_theme_color_override("font_color", Palette.ACC_GREEN)
-		"update":
-			tag.text = "UPDATE AVAILABLE"
-			tag.add_theme_color_override("font_color", WARN_COLOR)
-		_:
-			tag.text = "NOT INSTALLED"
-	h.add_child(tag)
 
 	if Updater.is_busy(id):
 		var bar := ProgressBar.new()
-		bar.custom_minimum_size = Vector2(160, 8)
+		bar.custom_minimum_size = Vector2(110, 8)
 		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		bar.show_percentage = false
 		bar.max_value = 100.0
 		_bars[id] = bar
 		h.add_child(bar)
-	elif state != "installed":
+	elif state == "installed":
+		var ok := CapsLabel.new()
+		ok.theme_type_variation = "MutedLabel"
+		ok.text = "Installed"
+		ok.add_theme_color_override("font_color", Palette.ACC_GREEN)
+		ok.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		h.add_child(ok)
+	elif Updater.game_download(id).is_empty():
+		card.modulate.a = 0.5    # sin descarga disponible: fila atenuada, sin botón
+	else:
 		var b := Button.new()
-		b.text = "UPDATE" if state == "UPDATE" else "DOWNLOAD"
-		if Updater.game_download(id).is_empty():
-			b.text = "UNAVAILABLE"
-			b.disabled = true
-		else:
-			b.pressed.connect(func():
-				_message.text = ""
-				Updater.download_game(id)
-				refresh())
+		b.theme_type_variation = "CompactButton"
+		b.text = "UPDATE" if state == "update" else "DOWNLOAD"
+		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		b.pressed.connect(func():
+			_message.text = ""
+			Updater.download_game(id)
+			refresh())
 		h.add_child(b)
 	return card
 

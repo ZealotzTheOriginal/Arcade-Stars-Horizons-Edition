@@ -44,6 +44,8 @@ func _process(_d: float) -> bool:
 		_tab("library")
 	if frame == 60:
 		_shot("hub_library")
+		current_scene._sidebar_toggle.shown = false
+		current_scene._on_sidebar_toggled(false)
 		_tab("settings")
 	if frame == 70:
 		_shot("hub_settings")

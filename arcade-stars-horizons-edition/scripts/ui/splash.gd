@@ -26,12 +26,13 @@ var _spark_data: Array[Dictionary] = []
 
 func _ready() -> void:
 	if OS.get_environment("ASH_NO_SPLASH") == "1":
-		_finish.call_deferred()
+		WindowChrome.enter_launcher.call_deferred(load(HUB_SCENE))
 		return
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	WindowChrome.begin_splash()
 	Backend.start()    # la conexión se establece mientras se ve el splash
+	ResourceLoader.load_threaded_request(HUB_SCENE)    # el hub se carga mientras se ve el splash
 
 	# Sombra suave: da contraste al logo blanco sobre escritorios claros.
 	_shade = TextureRect.new()
@@ -168,6 +169,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_begin_leave()
 
 func _finish() -> void:
-	WindowChrome.end_splash()
-	Engine.set_meta("fade_in_hub", true)
-	get_tree().change_scene_to_file(HUB_SCENE)
+	set_process(false)
+	var hub: PackedScene
+	if ResourceLoader.load_threaded_get_status(HUB_SCENE) == ResourceLoader.THREAD_LOAD_FAILED:
+		hub = load(HUB_SCENE)
+	else:
+		hub = ResourceLoader.load_threaded_get(HUB_SCENE)
+	WindowChrome.enter_launcher(hub)

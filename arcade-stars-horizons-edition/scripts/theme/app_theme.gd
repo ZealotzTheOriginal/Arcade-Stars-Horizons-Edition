@@ -1,6 +1,6 @@
 class_name AppTheme
 ## Construye el Theme global por código (sin .tres) con el estilo Clustark: texto en MAYÚSCULAS
-## y jerarquía solo por peso de fuente (Space Grotesk variable, eje "weight"): más peso para lo
+## y jerarquía solo por peso de fuente (Inter variable, eje "weight"): más peso para lo
 ## importante y corto, menos para lo secundario. Paneles translúcidos SIN borde, acento verde lima.
 
 const FONT_BODY := preload("res://assets/fonts/Inter.ttf")
@@ -26,25 +26,29 @@ static func font(base: Font, weight: int, spacing: int = 0) -> FontVariation:
 	return _fonts[key]
 
 static func head_font() -> FontVariation:
-	return font(FONT_HEAD, WEIGHT_BOLD)
+	return font(FONT_BODY, WEIGHT_BOLD)
+
+## Wordmark ("ARCADE STARS"): lo único que sigue en Space Grotesk.
+static func brand_font(spacing: int = 0) -> FontVariation:
+	return font(FONT_HEAD, WEIGHT_BOLD, spacing)
 
 static func get_theme() -> Theme:
 	if _cached:
 		return _cached
 	var t := Theme.new()
-	t.default_font = font(FONT_HEAD, WEIGHT_REGULAR, 1)
+	t.default_font = font(FONT_BODY, WEIGHT_REGULAR, 1)
 	t.default_font_size = 15
 
 	# Etiquetas: peso según importancia
 	t.set_color("font_color", "Label", Palette.FG_200)
 	t.add_type("HeadLabel")
 	t.set_type_variation("HeadLabel", "Label")
-	t.set_font("font", "HeadLabel", font(FONT_HEAD, WEIGHT_BOLD, 1))
+	t.set_font("font", "HeadLabel", font(FONT_BODY, WEIGHT_BOLD, 1))
 	t.set_font_size("font_size", "HeadLabel", 28)
 	t.set_color("font_color", "HeadLabel", Palette.FG_100)
 	t.add_type("MutedLabel")
 	t.set_type_variation("MutedLabel", "Label")
-	t.set_font("font", "MutedLabel", font(FONT_HEAD, WEIGHT_LIGHT, 1))
+	t.set_font("font", "MutedLabel", font(FONT_BODY, WEIGHT_LIGHT, 1))
 	t.set_font_size("font_size", "MutedLabel", 12)
 	t.set_color("font_color", "MutedLabel", Palette.fade(Palette.FG_200, 0.6))
 
@@ -61,7 +65,7 @@ static func get_theme() -> Theme:
 	t.set_stylebox("panel", "CardPanel", card)
 
 	# Botones
-	t.set_font("font", "Button", font(FONT_HEAD, WEIGHT_SEMIBOLD, 1))
+	t.set_font("font", "Button", font(FONT_BODY, WEIGHT_SEMIBOLD, 1))
 	t.set_font_size("font_size", "Button", 14)
 	t.set_stylebox("normal", "Button", box(Palette.fade(Palette.BG_400, 0.9), Palette.fade(Palette.FG_100, 0.12), 12, 1, 18))
 	t.set_stylebox("hover", "Button", box(Palette.BG_400.lightened(0.1), Palette.fade(Palette.ACC_BLUE, 0.6), 12, 1, 18))
@@ -74,7 +78,7 @@ static func get_theme() -> Theme:
 
 	t.add_type("PrimaryButton")
 	t.set_type_variation("PrimaryButton", "Button")
-	t.set_font("font", "PrimaryButton", font(FONT_HEAD, WEIGHT_BOLD, 1))
+	t.set_font("font", "PrimaryButton", font(FONT_BODY, WEIGHT_BOLD, 1))
 	t.set_stylebox("normal", "PrimaryButton", box(Palette.ACC_GREEN, Palette.ACC_GREEN, 12, 1, 20))
 	t.set_stylebox("hover", "PrimaryButton", box(Palette.ACC_GREEN.lightened(0.18), Palette.FG_100, 12, 1, 20))
 	t.set_stylebox("pressed", "PrimaryButton", box(Palette.ACC_GREEN.darkened(0.15), Palette.ACC_GREEN, 12, 1, 20))
@@ -83,9 +87,17 @@ static func get_theme() -> Theme:
 		t.set_color(c, "PrimaryButton", Palette.VOID)
 	t.set_color("font_disabled_color", "PrimaryButton", Palette.fade(Palette.VOID, 0.5))
 
+	t.add_type("CompactButton")
+	t.set_type_variation("CompactButton", "Button")
+	t.set_font_size("font_size", "CompactButton", 13)
+	t.set_stylebox("normal", "CompactButton", box(Palette.fade(Palette.BG_400, 0.9), Palette.fade(Palette.FG_100, 0.12), 10, 1, 12))
+	t.set_stylebox("hover", "CompactButton", box(Palette.BG_400.lightened(0.1), Palette.fade(Palette.ACC_BLUE, 0.6), 10, 1, 12))
+	t.set_stylebox("pressed", "CompactButton", box(Palette.BG_300, Palette.ACC_BLUE, 10, 1, 12))
+	t.set_stylebox("disabled", "CompactButton", box(Palette.fade(Palette.BG_300, 0.5), Palette.fade(Palette.FG_100, 0.04), 10, 1, 12))
+
 	t.add_type("DangerButton")
 	t.set_type_variation("DangerButton", "Button")
-	t.set_font("font", "DangerButton", font(FONT_HEAD, WEIGHT_BOLD, 1))
+	t.set_font("font", "DangerButton", font(FONT_BODY, WEIGHT_BOLD, 1))
 	var danger := Color("#E5484D")
 	t.set_stylebox("normal", "DangerButton", box(danger, danger, 12, 1, 20))
 	t.set_stylebox("hover", "DangerButton", box(danger.lightened(0.15), Palette.FG_100, 12, 1, 20))
@@ -97,7 +109,7 @@ static func get_theme() -> Theme:
 	# (el subrayado lo dibuja NavLink). Peso medio-alto: pocas palabras, importantes.
 	t.add_type("NavLink")
 	t.set_type_variation("NavLink", "Button")
-	t.set_font("font", "NavLink", font(FONT_HEAD, WEIGHT_SEMIBOLD, 1))
+	t.set_font("font", "NavLink", font(FONT_BODY, WEIGHT_SEMIBOLD, 1))
 	t.set_font_size("font_size", "NavLink", 15)
 	var link_box := StyleBoxEmpty.new()
 	link_box.content_margin_left = 6
@@ -131,7 +143,7 @@ static func get_theme() -> Theme:
 	t.set_stylebox("normal", "OptionButton", t.get_stylebox("normal", "Button"))
 	t.set_stylebox("hover", "OptionButton", t.get_stylebox("hover", "Button"))
 	t.set_stylebox("pressed", "OptionButton", t.get_stylebox("pressed", "Button"))
-	t.set_font("font", "PopupMenu", font(FONT_HEAD, WEIGHT_REGULAR, 1))
+	t.set_font("font", "PopupMenu", font(FONT_BODY, WEIGHT_REGULAR, 1))
 	t.set_stylebox("panel", "PopupMenu", box(Palette.BG_200, Palette.fade(Palette.FG_100, 0.12), 10, 1, 6))
 	t.set_stylebox("hover", "PopupMenu", box(Palette.BG_400, Color.TRANSPARENT, 8, 0, 6))
 

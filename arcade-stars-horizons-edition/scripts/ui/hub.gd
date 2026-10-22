@@ -25,6 +25,8 @@ var _library_view: Control
 var _settings_view: Control
 var _tab_buttons: Dictionary = {}    # nombre de pestaña -> Button
 var _tab := "rooms"
+var _users_panel: Control
+var _sidebar_toggle: SidebarToggle
 
 func _ready() -> void:
 	theme = AppTheme.get_theme()
@@ -47,11 +49,24 @@ func _ready() -> void:
 	_on_backend_status()
 	if Engine.has_meta("fade_in_hub"):
 		Engine.remove_meta("fade_in_hub")
-		modulate.a = 0.0
-		create_tween().tween_property(self, "modulate:a", 1.0, 0.35)
+		modulate.a = 0.0    # lo muestra fade_in() cuando la ventana ya tiene su tamaño final
 	if Net.last_leave_reason != "":
 		_set_status(Net.last_leave_reason, true)
 	Backend.start()
+
+func _load_sidebar_shown() -> bool:
+	var cfg := ConfigFile.new()
+	return cfg.load("user://ui.cfg") != OK or cfg.get_value("ui", "sidebar_shown", true)
+
+func _on_sidebar_toggled(shown: bool) -> void:
+	_users_panel.visible = shown
+	var cfg := ConfigFile.new()
+	cfg.load("user://ui.cfg")
+	cfg.set_value("ui", "sidebar_shown", shown)
+	cfg.save("user://ui.cfg")
+
+func fade_in() -> void:
+	create_tween().tween_property(self, "modulate:a", 1.0, 0.35)
 
 # ── Construcción de UI ───────────────────────────────────
 
@@ -73,7 +88,9 @@ func _build() -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 20)
 	root.add_child(body)
-	body.add_child(_build_users_panel())
+	_users_panel = _build_users_panel()
+	_users_panel.visible = _load_sidebar_shown()
+	body.add_child(_users_panel)
 
 	var center := Control.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -89,6 +106,9 @@ func _build() -> void:
 func _build_nav() -> Control:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 14)
+	_sidebar_toggle = SidebarToggle.new(_load_sidebar_shown())
+	_sidebar_toggle.toggled.connect(_on_sidebar_toggled)
+	h.add_child(_sidebar_toggle)
 	var group := ButtonGroup.new()
 	for tab in [["rooms", "Rooms"], ["library", "Library"], ["settings", "Settings"]]:
 		var b := NavLink.new(tab[1])

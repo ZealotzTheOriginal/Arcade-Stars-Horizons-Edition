@@ -93,8 +93,13 @@ Con Supabase real: `.env` (ver `.env.example`) y sin `ASH_DEV_AUTH`. Pruebas aut
 - **Nebulosas que destellan** (aparecen un instante, se apagan y cambian de lugar en cada ciclo) y fondo **rígido al arrastrar**:
   al mover/redimensionar con el ratón el fondo viaja con la ventana (anclarlo al escritorio fotograma a fotograma es
   imposible de sincronizar con el sistema y las estrellas "nadan"); al maximizar o encajar sí se descubren otras zonas.
-- **Tipografía:** todo en MAYÚSCULAS (Space Grotesk variable); la jerarquía se hace solo con el peso (700 títulos, 600
+- **Tipografía:** todo en MAYÚSCULAS (Inter variable; Space Grotesk solo en el wordmark); la jerarquía se hace solo con el peso (700 títulos, 600
   botones/enlaces, 500 texto, 400 secundario). Paneles sin borde. Navegación al estilo del navbar de Clustark (`nav_link.gd`).
+- **Arranque sin destellos:** sin splash de Godot, la ventana nace fuera de pantalla y se coloca cuando el splash ya está dibujado,
+  la transparencia por píxel se mantiene (no se alterna) y el hub se construye invisible y aparece con un fundido tras
+  redimensionar la ventana. Comprobado muestreando la pantalla durante el arranque (la build anterior mostraba picos de blanco/gris).
+- **Sidebar "Online"** plegable con el icono de la barra de navegación (se recuerda entre sesiones). Library compacta:
+  una sola acción por juego (UPDATE / DOWNLOAD) y sin textos de estado redundantes.
 - **Splash** (`scenes/splash.tscn`): ventana con transparencia por píxel (el logo flota sobre el escritorio); clic o tecla la saltan,
   `ASH_NO_SPLASH=1` la omite. **Salir** pide confirmación (botón de cerrar, Alt+F4 o cierre del sistema; Esc cancela, Enter confirma).
 - Cada juego trae su propia copia del fondo y del estilo (`games/<id>/<id>/background.gd`, `style.gd`).
