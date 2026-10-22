@@ -60,14 +60,14 @@ El hub solo monta `.pck` cuyo nombre coincide con un juego del catálogo y cuyo 
 
 ### Añadir un juego
 1. Crear `games/<id>/` (proyecto Godot con preset `pck`), con el contrato anterior y su `manifest.json`.
-2. `toolselease.ps1 -Games <id> -Publish` y después `git push` (ver *Publicar versiones*).
+2. `tools\release.ps1 -Games <id> -Publish` y después `git push` (ver *Publicar versiones*).
 
 ## Desarrollo local
 
 ```
 # generar .pck y copiar la lógica al servidor
-.	ools\build_games.ps1
-.	ools\sync_server_logic.ps1
+.\tools\build_games.ps1
+.\tools\sync_server_logic.ps1
 # terminal 1: servidor sin Supabase
 ASH_DEV_AUTH=1 PORT=9081 godot --headless --path arcade-stars-horizons-edition res://server/server.tscn
 # terminales 2 y 3: clientes
@@ -79,12 +79,12 @@ Con Supabase real: `.env` (ver `.env.example`) y sin `ASH_DEV_AUTH`. Pruebas aut
 
 ## Publicar versiones (launcher y juegos)
 
-Todo se distribuye por **GitHub Releases** del repo. `toolselease.ps1` empaqueta, calcula SHA-256 y escribe el
+Todo se distribuye por **GitHub Releases** del repo. `tools\release.ps1` empaqueta, calcula SHA-256 y escribe el
 catálogo `manifest.json` (release con tag `catalog`, URL fija):
 
 ```
-.	oolselease.ps1 -Games minesweeper              # prueba en seco: solo genera dist/release/
-.	oolselease.ps1 -Launcher -Games all -Publish   # genera y sube (necesita `gh auth login` con permisos de escritura)
+.\tools\release.ps1 -Games minesweeper              # prueba en seco: solo genera dist/release/
+.\tools\release.ps1 -Launcher -Games all -Publish   # genera y sube (necesita `gh auth login` con permisos de escritura)
 ```
 - Versión del **launcher**: `config/version` en `arcade-stars-horizons-edition/project.godot`. Súbela en cada publicación.
 - Versión de un **juego**: `version` en `games/<id>/<id>/manifest.json`.
@@ -99,7 +99,7 @@ catálogo `manifest.json` (release con tag `catalog`, URL fija):
 
 `ArcadeStars.exe` (un solo archivo, con icono) + `games/minesweeper.pck` al lado, en un zip. A partir de ahí el
 launcher se actualiza solo y descarga los juegos desde la Biblioteca. Exportar a mano: *Project → Export → Windows Desktop*
-(`dist/hub/ArcadeStars.exe`); `toolselease.ps1 -Launcher` lo hace sin abrir el editor.
+(`dist/hub/ArcadeStars.exe`); `tools\release.ps1 -Launcher` lo hace sin abrir el editor.
 
 ## Iconos
 
