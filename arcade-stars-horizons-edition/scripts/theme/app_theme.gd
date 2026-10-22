@@ -40,12 +40,12 @@ static func get_theme() -> Theme:
 	# Paneles
 	t.add_type("GlassPanel")
 	t.set_type_variation("GlassPanel", "PanelContainer")
-	var glass := box(Palette.fade(Palette.BG_100, 0.72), Palette.fade(Palette.FG_100, 0.08), 16, 1)
+	var glass := box(Palette.fade(Palette.BG_100, 0.42), Palette.fade(Palette.FG_100, 0.10), 6, 1)
 	glass.set_content_margin_all(18)
 	t.set_stylebox("panel", "GlassPanel", glass)
 	t.add_type("CardPanel")
 	t.set_type_variation("CardPanel", "PanelContainer")
-	var card := box(Palette.fade(Palette.BG_300, 0.8), Palette.fade(Palette.FG_100, 0.06), 12, 1)
+	var card := box(Palette.fade(Palette.BG_300, 0.5), Palette.fade(Palette.FG_100, 0.07), 4, 1)
 	card.set_content_margin_all(12)
 	t.set_stylebox("panel", "CardPanel", card)
 
@@ -123,6 +123,9 @@ static func box(bg: Color, border: Color, radius: int, border_w: int = 0, pad: i
 	s.border_color = border
 	s.set_border_width_all(border_w)
 	s.set_corner_radius_all(radius)
+	# Con antialiasing, las esquinas con borde de 1 px y relleno translúcido se ven 1 px más gruesas
+	# que los lados. Radios pequeños: sin antialiasing (borde uniforme y nítido); grandes: con él.
+	s.anti_aliasing = radius > 8
 	s.content_margin_left = pad
 	s.content_margin_right = pad
 	s.content_margin_top = maxi(pad / 2, 8) if pad > 0 else 0

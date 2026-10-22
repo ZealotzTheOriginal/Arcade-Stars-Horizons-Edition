@@ -77,6 +77,21 @@ ASH_DEV_AUTH=1 ASH_SERVER_URL=ws://127.0.0.1:9081 godot --path arcade-stars-hori
 `ASH_DEV_AUTH=1` omite Supabase (solo local; **nunca** en Render). `--profile=N` da una sesión anónima distinta por instancia.
 Con Supabase real: `.env` (ver `.env.example`) y sin `ASH_DEV_AUTH`. Pruebas automáticas: `scripts/dev/smoke_test.gd`.
 
+## Ventana, escala y fondo
+
+- **Ventana sin bordes** con barra propia (`scripts/ui/window_chrome.gd`). Arrastre propio con encaje al soltar:
+  arriba = pantalla completa, izquierda/derecha = mitad de pantalla; arrastrar una ventana encajada la restaura.
+  Maximizar usa el área útil de la pantalla (respeta la barra de tareas) y restaura el tamaño anterior.
+- **Interfaz de tamaño fijo:** no se escala al redimensionar la ventana (sin *content scale*); solo se ajusta al DPI
+  de la pantalla (125 %, 150 %...). `ASH_UI_SCALE=1.5` fuerza un factor. Si la ventana es pequeña se ve menos contenido, no más pequeño.
+- **Fondo anclado al escritorio** (`assets/starfield.gdshader`, `scripts/ui/star_field.gd`): la ventana es un portal sobre un
+  campo fijo de estrellas y nebulosas; al moverla o redimensionarla se descubren otras zonas. Se calcula en píxeles físicos
+  (estrellas nítidas, borde de 1 px) y las nebulosas salen de una textura de ruido precalculada (barato: ~80 fps sin vsync a 1920x1020
+  en una GPU integrada). Las estrellas fugaces son el port de `starfield-background.ts` de Pro-Clustark.
+- **Paneles:** radio 6 px (tarjetas 4 px), fondo translúcido. Los radios pequeños se dibujan sin antialiasing: con él, el borde
+  de 1 px se ve más grueso en las esquinas.
+- Cada juego trae su propia copia del fondo y del estilo (`games/<id>/<id>/background.gd`, `style.gd`).
+
 ## Publicar versiones (launcher y juegos)
 
 Todo se distribuye por **GitHub Releases** del repo. `tools\release.ps1` empaqueta, calcula SHA-256 y escribe el

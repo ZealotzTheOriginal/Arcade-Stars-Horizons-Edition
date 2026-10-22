@@ -3,6 +3,7 @@ extends SceneTree
 ##   godot --path . -s res://scripts/dev/screenshot.gd
 
 var frame := 0
+var _star_shot := false
 
 func _initialize() -> void:
 	root.size = Vector2i(1280, 720)
@@ -31,7 +32,14 @@ func _process(_d: float) -> bool:
 		lobby.rooms_changed.emit()
 		updater.manifest = {"launcher": {"version": "1.2.0", "url": "x", "sha256": "0".repeat(64)}, "games": {"minesweeper": {"version": "1.1.0", "url": "x", "sha256": "0".repeat(64)}}}
 		updater.manifest_changed.emit()
-	if frame == 50:
+	if frame == 40:
+		current_scene.get_child(0)._next_shoot = 0.0     # fuerza una estrella fugaz
+	if frame > 40 and frame < 300 and not _star_shot:
+		var sf = current_scene.get_child(0)
+		if not sf._shooting.is_empty() and sf._t - sf._shooting[0]["start_t"] > 0.5:
+			_star_shot = true
+			_shot("shooting_star")
+	if frame == 52:
 		_shot("hub_lobby")
 		_tab("library")
 	if frame == 60:
