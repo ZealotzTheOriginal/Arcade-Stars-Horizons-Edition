@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Arcade Stars Horizons Edition"
 config/version="1.0.1"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/splash.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://assets/icons/icon.png"
 config/windows_native_icon="res://assets/icons/icon.ico"
@@ -29,11 +29,13 @@ WindowChrome="*res://scripts/ui/window_chrome.gd"
 
 [display]
 
-window/size/viewport_width=1280
-window/size/viewport_height=720
+window/size/viewport_width=560
+window/size/viewport_height=420
 window/size/borderless=true
-window/size/window_width_override=1280
-window/size/window_height_override=720
+window/size/transparent=true
+window/per_pixel_transparency/allowed=true
+window/size/window_width_override=560
+window/size/window_height_override=420
 
 [physics]
 
@@ -41,6 +43,7 @@ window/size/window_height_override=720
 
 [rendering]
 
+viewport/transparent_background=true
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"

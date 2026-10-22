@@ -59,6 +59,9 @@ func _process(_d: float) -> bool:
 		current_scene._apply_view(logic.view())
 	if frame == 110:
 		_shot("minesweeper")
+		root.get_node("WindowChrome").request_close()
+	if frame == 120:
+		_shot("exit_confirm")
 		quit()
 	return false
 

@@ -23,7 +23,8 @@ $root = Split-Path -Parent $PSScriptRoot
 if (-not $Godot) { $Godot = Join-Path $root "Godot_v4.7.2-stable_win64.exe" }
 $hub = Join-Path $root "arcade-stars-horizons-edition"
 $out = Join-Path $root "dist/release"
-if (Test-Path $out) { Remove-Item $out -Recurse -Force }
+# Limpia el contenido (si algún programa tiene abierta la carpeta, no falla)
+Get-ChildItem $out -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $out | Out-Null
 
 function Get-Sha256($path) { (Get-FileHash -Algorithm SHA256 $path).Hash.ToLower() }

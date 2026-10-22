@@ -21,17 +21,17 @@ func _ready() -> void:
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 10)
 	v.add_child(top)
-	var t := Label.new()
+	var t := CapsLabel.new()
 	t.theme_type_variation = "HeadLabel"
 	t.text = "Library"
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(t)
-	_message = Label.new()
+	_message = CapsLabel.new()
 	_message.theme_type_variation = "MutedLabel"
 	top.add_child(_message)
 	_restart_btn = Button.new()
 	_restart_btn.theme_type_variation = "PrimaryButton"
-	_restart_btn.text = "Restart to apply"
+	_restart_btn.text = "RESTART TO APPLY"
 	_restart_btn.pressed.connect(func(): Updater.restart())
 	top.add_child(_restart_btn)
 
@@ -42,7 +42,7 @@ func _ready() -> void:
 	var inner := VBoxContainer.new()
 	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(inner)
-	_empty = Label.new()
+	_empty = CapsLabel.new()
 	_empty.theme_type_variation = "MutedLabel"
 	_empty.text = "No games available"
 	inner.add_child(_empty)
@@ -78,19 +78,19 @@ func _game_card(id: String) -> Control:
 	var info := VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(info)
-	var n := Label.new()
+	var n := CapsLabel.new()
 	n.theme_type_variation = "HeadLabel"
 	n.add_theme_font_size_override("font_size", 20)
 	n.text = GameRegistry.game_name(id)
 	info.add_child(n)
-	var d := Label.new()
+	var d := CapsLabel.new()
 	d.theme_type_variation = "MutedLabel"
 	d.text = "v" + GameRegistry.version_of(id)
 	if state == "update":
 		d.text += " · installed v" + GameLoader.installed[id]["version"]
 	info.add_child(d)
 
-	var tag := Label.new()
+	var tag := CapsLabel.new()
 	tag.theme_type_variation = "MutedLabel"
 	match state:
 		"installed":
@@ -113,9 +113,9 @@ func _game_card(id: String) -> Control:
 		h.add_child(bar)
 	elif state != "installed":
 		var b := Button.new()
-		b.text = "Update" if state == "update" else "Download"
+		b.text = "UPDATE" if state == "UPDATE" else "DOWNLOAD"
 		if Updater.game_download(id).is_empty():
-			b.text = "Unavailable"
+			b.text = "UNAVAILABLE"
 			b.disabled = true
 		else:
 			b.pressed.connect(func():

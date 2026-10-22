@@ -6,6 +6,7 @@ extends Control
 
 const MineBoard = preload("res://minesweeper/mine_board.gd")
 const Style = preload("res://minesweeper/style.gd")
+const Caps = preload("res://minesweeper/caps_label.gd")
 
 var _ctx
 var _view: Dictionary = {}
@@ -57,19 +58,19 @@ func _build() -> void:
 	var sv := VBoxContainer.new()
 	sv.add_theme_constant_override("separation", 12)
 	side_panel.add_child(sv)
-	var title := Label.new()
+	var title := Caps.new()
 	title.theme_type_variation = "HeadLabel"
 	title.text = "Minesweeper"
 	sv.add_child(title)
-	_turn_label = Label.new()
+	_turn_label = Caps.new()
 	_turn_label.theme_type_variation = "HeadLabel"
 	_turn_label.add_theme_font_size_override("font_size", 20)
 	_turn_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sv.add_child(_turn_label)
-	_flags_label = Label.new()
+	_flags_label = Caps.new()
 	_flags_label.theme_type_variation = "MutedLabel"
 	sv.add_child(_flags_label)
-	var sl := Label.new()
+	var sl := Caps.new()
 	sl.theme_type_variation = "MutedLabel"
 	sl.text = "SCORE"
 	sv.add_child(sl)
@@ -82,7 +83,7 @@ func _build() -> void:
 	_back_btn.pressed.connect(func(): _ctx.back_to_room())
 	sv.add_child(_back_btn)
 	var quit := Button.new()
-	quit.text = "Leave"
+	quit.text = "LEAVE"
 	quit.pressed.connect(func(): _ctx.leave())
 	sv.add_child(quit)
 
@@ -108,12 +109,12 @@ func _build() -> void:
 	bv.add_theme_constant_override("separation", 6)
 	bv.alignment = BoxContainer.ALIGNMENT_CENTER
 	_banner.add_child(bv)
-	_banner_title = Label.new()
+	_banner_title = Caps.new()
 	_banner_title.theme_type_variation = "HeadLabel"
 	_banner_title.add_theme_font_size_override("font_size", 34)
 	_banner_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bv.add_child(_banner_title)
-	_banner_sub = Label.new()
+	_banner_sub = Caps.new()
 	_banner_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bv.add_child(_banner_sub)
 
@@ -153,7 +154,7 @@ func _refresh() -> void:
 				_banner_title.text = "Opponents left"
 				_banner_sub.text = "%s wins." % wname
 		_banner_title.add_theme_color_override("font_color", _board.DANGER if _view["reason"] == "mine" else Style.PALETTE["acc_green"])
-	_back_btn.text = "Back to room" if _ctx.is_host() else "Waiting for host…"
+	_back_btn.text = "BACK TO ROOM" if _ctx.is_host() else "WAITING FOR HOST…"
 	_back_btn.disabled = not (over and _ctx.is_host())
 
 func _score_row(id: int, score: int, active: bool) -> Control:
@@ -172,12 +173,12 @@ func _score_row(id: int, score: int, active: bool) -> Control:
 	dot.custom_minimum_size = Vector2(10, 10)
 	dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(dot)
-	var n := Label.new()
+	var n := Caps.new()
 	n.text = _ctx.player_name(id) + (" (you)" if id == _ctx.my_id() else "")
 	n.clip_text = true
 	n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(n)
-	var s := Label.new()
+	var s := Caps.new()
 	s.theme_type_variation = "HeadLabel"
 	s.add_theme_font_size_override("font_size", 20)
 	s.text = str(score)

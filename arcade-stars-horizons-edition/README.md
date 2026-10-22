@@ -90,9 +90,18 @@ Con Supabase real: `.env` (ver `.env.example`) y sin `ASH_DEV_AUTH`. Pruebas aut
   en una GPU integrada). Las estrellas fugaces son el port de `starfield-background.ts` de Pro-Clustark.
 - **Paneles:** radio 6 px (tarjetas 4 px), fondo translúcido. Los radios pequeños se dibujan sin antialiasing: con él, el borde
   de 1 px se ve más grueso en las esquinas.
+- **Nebulosas que destellan** (aparecen un instante, se apagan y cambian de lugar en cada ciclo) y fondo **rígido al arrastrar**:
+  al mover/redimensionar con el ratón el fondo viaja con la ventana (anclarlo al escritorio fotograma a fotograma es
+  imposible de sincronizar con el sistema y las estrellas "nadan"); al maximizar o encajar sí se descubren otras zonas.
+- **Tipografía:** todo en MAYÚSCULAS (Space Grotesk variable); la jerarquía se hace solo con el peso (700 títulos, 600
+  botones/enlaces, 500 texto, 400 secundario). Paneles sin borde. Navegación al estilo del navbar de Clustark (`nav_link.gd`).
+- **Splash** (`scenes/splash.tscn`): ventana con transparencia por píxel (el logo flota sobre el escritorio); clic o tecla la saltan,
+  `ASH_NO_SPLASH=1` la omite. **Salir** pide confirmación (botón de cerrar, Alt+F4 o cierre del sistema; Esc cancela, Enter confirma).
 - Cada juego trae su propia copia del fondo y del estilo (`games/<id>/<id>/background.gd`, `style.gd`).
 
 ## Publicar versiones (launcher y juegos)
+
+Chuleta rápida en `RELEASING.md`.
 
 Todo se distribuye por **GitHub Releases** del repo. `tools\release.ps1` empaqueta, calcula SHA-256 y escribe el
 catálogo `manifest.json` (release con tag `catalog`, URL fija):

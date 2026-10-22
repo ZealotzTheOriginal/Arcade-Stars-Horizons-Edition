@@ -14,7 +14,7 @@ func _ready() -> void:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 18)
 	add_child(v)
-	var t := Label.new()
+	var t := CapsLabel.new()
 	t.theme_type_variation = "HeadLabel"
 	t.text = "Settings"
 	v.add_child(t)
@@ -25,21 +25,21 @@ func _ready() -> void:
 	v.add_child(row)
 	_name_input = LineEdit.new()
 	_name_input.max_length = 16
-	_name_input.placeholder_text = "Nickname"
+	_name_input.placeholder_text = "NICKNAME"
 	_name_input.custom_minimum_size.x = 260
 	_name_input.text_submitted.connect(func(_t): _apply_name())
 	row.add_child(_name_input)
 	var apply := Button.new()
-	apply.text = "Apply"
+	apply.text = "APPLY"
 	apply.pressed.connect(_apply_name)
 	row.add_child(apply)
-	_name_msg = Label.new()
+	_name_msg = CapsLabel.new()
 	_name_msg.theme_type_variation = "MutedLabel"
 	row.add_child(_name_msg)
 
 	v.add_child(_section("GAMES"))
 	var folder := Button.new()
-	folder.text = "Open games folder"
+	folder.text = "OPEN GAMES FOLDER"
 	folder.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	folder.pressed.connect(func():
 		DirAccess.make_dir_recursive_absolute(GameLoader.user_games_dir())
@@ -50,14 +50,14 @@ func _ready() -> void:
 	var ver := HBoxContainer.new()
 	ver.add_theme_constant_override("separation", 12)
 	v.add_child(ver)
-	var version := Label.new()
+	var version := CapsLabel.new()
 	version.text = "Version " + AppConfig.launcher_version()
 	ver.add_child(version)
-	_update_status = Label.new()
+	_update_status = CapsLabel.new()
 	_update_status.theme_type_variation = "MutedLabel"
 	ver.add_child(_update_status)
 	_check_btn = Button.new()
-	_check_btn.text = "Check for updates"
+	_check_btn.text = "CHECK FOR UPDATES"
 	_check_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_check_btn.pressed.connect(func(): Updater.check())
 	v.add_child(_check_btn)
@@ -69,7 +69,7 @@ func _ready() -> void:
 	refresh()
 
 func _section(text: String) -> Label:
-	var l := Label.new()
+	var l := CapsLabel.new()
 	l.theme_type_variation = "MutedLabel"
 	l.text = text
 	return l

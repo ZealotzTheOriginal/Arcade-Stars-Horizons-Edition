@@ -45,6 +45,10 @@ func _ready() -> void:
 	_refresh_rooms()
 	_refresh_room()
 	_on_backend_status()
+	if Engine.has_meta("fade_in_hub"):
+		Engine.remove_meta("fade_in_hub")
+		modulate.a = 0.0
+		create_tween().tween_property(self, "modulate:a", 1.0, 0.35)
 	if Net.last_leave_reason != "":
 		_set_status(Net.last_leave_reason, true)
 	Backend.start()
@@ -84,13 +88,10 @@ func _build() -> void:
 
 func _build_nav() -> Control:
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 6)
+	h.add_theme_constant_override("separation", 14)
 	var group := ButtonGroup.new()
 	for tab in [["rooms", "Rooms"], ["library", "Library"], ["settings", "Settings"]]:
-		var b := Button.new()
-		b.theme_type_variation = "TabButton"
-		b.text = tab[1]
-		b.toggle_mode = true
+		var b := NavLink.new(tab[1])
 		b.button_group = group
 		b.button_pressed = tab[0] == _tab
 		var key: String = tab[0]
@@ -102,7 +103,7 @@ func _build_nav() -> Control:
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(sp)
-	_status = Label.new()
+	_status = CapsLabel.new()
 	_status.theme_type_variation = "MutedLabel"
 	h.add_child(_status)
 	return h
@@ -110,11 +111,11 @@ func _build_nav() -> Control:
 func _build_users_panel() -> Control:
 	var p := PanelContainer.new()
 	p.theme_type_variation = "GlassPanel"
-	p.custom_minimum_size.x = 260
+	p.custom_minimum_size.x = 230
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
 	p.add_child(v)
-	var t := Label.new()
+	var t := CapsLabel.new()
 	t.theme_type_variation = "MutedLabel"
 	t.text = "ONLINE"
 	v.add_child(t)
@@ -138,7 +139,7 @@ func _build_lobby_view() -> Control:
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 10)
 	v.add_child(top)
-	var t := Label.new()
+	var t := CapsLabel.new()
 	t.theme_type_variation = "HeadLabel"
 	t.text = "Rooms"
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -146,13 +147,13 @@ func _build_lobby_view() -> Control:
 	_room_name_input = LineEdit.new()
 	_room_name_input.text = ROOM_NAMES.pick_random()
 	_room_name_input.max_length = 24
-	_room_name_input.placeholder_text = "Room name"
-	_room_name_input.custom_minimum_size.x = 220
+	_room_name_input.placeholder_text = "ROOM NAME"
+	_room_name_input.custom_minimum_size.x = 150
 	_room_name_input.text_submitted.connect(func(_t): _on_create_pressed())
 	top.add_child(_room_name_input)
 	_create_btn = Button.new()
 	_create_btn.theme_type_variation = "PrimaryButton"
-	_create_btn.text = "Create room"
+	_create_btn.text = "CREATE ROOM"
 	_create_btn.pressed.connect(_on_create_pressed)
 	top.add_child(_create_btn)
 
@@ -163,7 +164,7 @@ func _build_lobby_view() -> Control:
 	var inner := VBoxContainer.new()
 	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(inner)
-	_rooms_empty = Label.new()
+	_rooms_empty = CapsLabel.new()
 	_rooms_empty.theme_type_variation = "MutedLabel"
 	_rooms_empty.text = "No rooms yet"
 	inner.add_child(_rooms_empty)
@@ -182,16 +183,16 @@ func _build_room_view() -> Control:
 
 	var top := HBoxContainer.new()
 	v.add_child(top)
-	_room_title = Label.new()
+	_room_title = CapsLabel.new()
 	_room_title.theme_type_variation = "HeadLabel"
 	_room_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_room_title)
 	var leave := Button.new()
-	leave.text = "Leave room"
+	leave.text = "LEAVE ROOM"
 	leave.pressed.connect(func(): Net.leave())
 	top.add_child(leave)
 
-	var gl := Label.new()
+	var gl := CapsLabel.new()
 	gl.theme_type_variation = "MutedLabel"
 	gl.text = "GAME"
 	v.add_child(gl)
@@ -204,7 +205,7 @@ func _build_room_view() -> Control:
 	_settings_box.add_theme_constant_override("separation", 6)
 	v.add_child(_settings_box)
 
-	var pl := Label.new()
+	var pl := CapsLabel.new()
 	pl.theme_type_variation = "MutedLabel"
 	pl.text = "PLAYERS"
 	v.add_child(pl)
@@ -215,7 +216,7 @@ func _build_room_view() -> Control:
 
 	_start_btn = Button.new()
 	_start_btn.theme_type_variation = "PrimaryButton"
-	_start_btn.text = "Start game"
+	_start_btn.text = "START GAME"
 	_start_btn.pressed.connect(func(): Net.start_game())
 	v.add_child(_start_btn)
 	return p
@@ -226,7 +227,7 @@ func _fill_game_select() -> void:
 	_game_select.clear()
 	for id in GameRegistry.games:
 		var suffix := "" if GameLoader.is_installed(id) else " (not installed)"
-		_game_select.add_item(GameRegistry.game_name(id) + suffix)
+		_game_select.add_item((GameRegistry.game_name(id) + suffix).to_upper())
 		_game_select.set_item_metadata(_game_select.item_count - 1, id)
 
 func _show_view() -> void:
@@ -261,13 +262,13 @@ func _user_row(uname: String, dot: Color, room_name: String) -> Control:
 	d.custom_minimum_size = Vector2(8, 8)
 	d.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(d)
-	var l := Label.new()
+	var l := CapsLabel.new()
 	l.text = uname
 	l.clip_text = true
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(l)
 	if room_name != "":
-		var r := Label.new()
+		var r := CapsLabel.new()
 		r.theme_type_variation = "MutedLabel"
 		r.text = "● " + room_name
 		r.clip_text = true
@@ -291,18 +292,18 @@ func _room_card(r: Dictionary) -> Control:
 	var info := VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(info)
-	var n := Label.new()
+	var n := CapsLabel.new()
 	n.theme_type_variation = "HeadLabel"
 	n.add_theme_font_size_override("font_size", 20)
 	n.text = r["name"]
 	info.add_child(n)
-	var d := Label.new()
+	var d := CapsLabel.new()
 	d.theme_type_variation = "MutedLabel"
 	d.text = "%s · host %s · %d/%d%s%s" % [GameRegistry.game_name(r["game_id"]), r["host_name"], r["players"], r["max"],
 			" · in game" if r["in_game"] else "", "" if GameLoader.is_installed(r["game_id"]) else " · not installed"]
 	info.add_child(d)
 	var b := Button.new()
-	b.text = "Join"
+	b.text = "JOIN"
 	b.disabled = r["in_game"] or r["players"] >= r["max"] or not Backend.is_online()
 	b.pressed.connect(func(): Net.join_room(r["id"]))
 	h.add_child(b)
@@ -335,14 +336,14 @@ func _refresh_settings() -> void:
 	var schema: Array = GameRegistry.games.get(Net.room.get("game_id", ""), {}).get("settings", [])
 	var current: Dictionary = Net.room.get("settings", {})
 	for s in schema:
-		var l := Label.new()
+		var l := CapsLabel.new()
 		l.theme_type_variation = "MutedLabel"
 		l.text = s["label"]
 		_settings_box.add_child(l)
 		var ob := OptionButton.new()
 		var selected := 0
 		for i in s["options"].size():
-			ob.add_item(s["options"][i][1])
+			ob.add_item((s["options"][i][1]).to_upper())
 			ob.set_item_metadata(i, s["options"][i][0])
 			if s["options"][i][0] == current.get(s["key"], s["default"]):
 				selected = i
@@ -363,18 +364,18 @@ func _player_card(id: int) -> Control:
 	dot.custom_minimum_size = Vector2(12, 12)
 	dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(dot)
-	var l := Label.new()
+	var l := CapsLabel.new()
 	l.text = Net.player_name(id) + ("  (you)" if id == Net.my_id() else "")
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(l)
 	if not Net.players[id].get("ready", false):
-		var missing := Label.new()
+		var missing := CapsLabel.new()
 		missing.theme_type_variation = "MutedLabel"
 		missing.text = "MISSING GAME"
 		missing.add_theme_color_override("font_color", ERROR_COLOR)
 		h.add_child(missing)
 	if id == Net.room.get("host_id"):
-		var tag := Label.new()
+		var tag := CapsLabel.new()
 		tag.theme_type_variation = "MutedLabel"
 		tag.text = "HOST"
 		h.add_child(tag)

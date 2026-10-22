@@ -11,7 +11,7 @@ uniform vec4 void_color : source_color = vec4(0.0118, 0.0118, 0.0549, 1.0);
 uniform vec4 nebula_a : source_color = vec4(0.525, 0.969, 0.188, 1.0);   // verde
 uniform vec4 nebula_b : source_color = vec4(0.651, 0.784, 1.0, 1.0);     // azul
 uniform vec4 nebula_c : source_color = vec4(0.925, 0.698, 1.0, 1.0);     // rosa
-uniform float nebula_strength : hint_range(0.0, 1.0) = 0.16;
+uniform float nebula_strength : hint_range(0.0, 1.0) = 0.10;
 uniform float nebula_scale = 2600.0;      // px por repetición de la textura de ruido
 uniform float cell = 104.0;               // px por celda de estrellas (~1 estrella por celda)
 
@@ -32,6 +32,15 @@ vec2 hash22(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
 	p3 += dot(p3, p3.yzx + 33.33);
 	return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+// Envolvente de un destello: sube (fade_in), se mantiene (hold) y baja (fade_out) dentro de un ciclo.
+// `cycle` devuelve el número de ciclo (sirve para cambiar de lugar en cada destello).
+float flash(float period, float phase_s, float fade_in, float hold, float fade_out, out float cycle) {
+	float t = TIME + phase_s;
+	cycle = floor(t / period);
+	float a = t - cycle * period;
+	return smoothstep(0.0, fade_in, a) * (1.0 - smoothstep(fade_in + hold, fade_in + hold + fade_out, a));
 }
 
 // Estrellas: parpadeo coseno por estrella (periodo 3-8 s), radio 0.6-2.3 px, opacidad base 0.2-0.75.
@@ -60,14 +69,19 @@ void fragment() {
 	vec2 p = UV * window_px + window_origin;    // coordenadas de escritorio (px)
 	vec3 col = void_color.rgb;
 
-	// Nebulosas: ruido fractal precalculado en textura (barato) y muestreado con deriva lenta.
+	// Nebulosas que DESTELLAN: cada capa sube, se mantiene un instante y se apaga; en cada ciclo
+	// aparece en otro lugar del campo. El ruido fractal está precalculado en textura (barato).
 	vec2 q = p / nebula_scale;
-	float n1 = texture(noise_tex, q + vec2(TIME * 0.0015, 0.0)).r;
-	float n2 = texture(noise_tex, q * 0.75 + vec2(0.37, 0.61 - TIME * 0.001)).r;
-	float n3 = texture(noise_tex, q * 1.35 + vec2(0.71, 0.13)).r;
-	col += nebula_b.rgb * smoothstep(0.50, 0.88, n1) * nebula_strength;
-	col += nebula_c.rgb * smoothstep(0.52, 0.90, n2) * nebula_strength * 0.8;
-	col += nebula_a.rgb * smoothstep(0.60, 0.95, n3) * nebula_strength * 0.35;
+	float c1; float c2; float c3;
+	float f1 = flash(17.0, 2.0, 1.4, 1.6, 5.0, c1);
+	float f2 = flash(23.0, 9.0, 1.4, 1.4, 5.5, c2);
+	float f3 = flash(29.0, 15.0, 1.6, 1.2, 5.0, c3);
+	float n1 = texture(noise_tex, q + hash22(vec2(c1, 1.0)) * 7.0).r;
+	float n2 = texture(noise_tex, q * 0.75 + hash22(vec2(c2, 2.0)) * 7.0).r;
+	float n3 = texture(noise_tex, q * 1.35 + hash22(vec2(c3, 3.0)) * 7.0).r;
+	col += nebula_b.rgb * smoothstep(0.50, 0.88, n1) * nebula_strength * f1;
+	col += nebula_c.rgb * smoothstep(0.52, 0.90, n2) * nebula_strength * 0.8 * f2;
+	col += nebula_a.rgb * smoothstep(0.60, 0.95, n3) * nebula_strength * 0.5 * f3;
 
 	col += vec3(stars(p));
 

@@ -20,6 +20,15 @@ const SNAP_MARGIN := 6          # px físicos al borde de la pantalla que activa
 const DRAG_THRESHOLD := 4.0     # px que hay que mover antes de considerarlo arrastre
 
 var mode := Mode.BAR
+## Compensa los desplazamientos hechos con el ratón (arrastrar/redimensionar) para que el fondo
+## se mueva rígido con la ventana; ver StarField._origin().
+var field_drift := Vector2.ZERO
+var _last_pos := Vector2.ZERO
+var _resizing := false
+var _splash := false
+var _root: Control
+var _confirm: Control
+var _confirm_text: Label
 var _snap := Snap.NONE
 var _restore_rect := Rect2i()
 var _dragging := false
@@ -35,13 +44,17 @@ func _ready() -> void:
 	layer = 100
 	var win := get_window()
 	win.borderless = true
+	win.title = "Arcade Stars"
+	get_tree().auto_accept_quit = false    # el cierre pasa por la confirmación
 	win.dpi_changed.connect(_apply_scale)
 	_apply_scale()
+	_last_pos = Vector2(DisplayServer.window_get_position())
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.theme = AppTheme.get_theme()
 	add_child(root)
+	_root = root
 	_build_bar(root)
 	_build_pill(root)
 	_build_grips(root)
@@ -56,6 +69,37 @@ func set_mode(m: Mode) -> void:
 func is_maximized() -> bool:
 	return _snap == Snap.FULL
 
+## Splash: ventana pequeña, centrada y con transparencia por píxel (el logo flota sin ventana visible).
+func begin_splash() -> void:
+	_splash = true
+	var win := get_window()
+	win.min_size = Vector2i.ZERO
+	win.transparent = true
+	get_viewport().transparent_bg = true
+	set_mode(Mode.HIDDEN)
+	_place_window(Vector2(560, 420))
+
+## Fin del splash: ventana opaca con el tamaño del launcher, barra de ventana y tamaño mínimo.
+func end_splash() -> void:
+	if not _splash:
+		return
+	_splash = false
+	var win := get_window()
+	win.transparent = false
+	get_viewport().transparent_bg = false
+	_apply_scale()
+	set_mode(Mode.BAR)
+	_place_window(Vector2(1280, 720))
+
+func _place_window(logical_size: Vector2) -> void:
+	var usable := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
+	var size := Vector2i((logical_size * ui_scale()).round())
+	size = Vector2i(mini(size.x, usable.size.x), mini(size.y, usable.size.y))
+	_snap = Snap.NONE
+	DisplayServer.window_set_size(size)
+	DisplayServer.window_set_position(usable.position + (usable.size - size) / 2)
+	_last_pos = Vector2(DisplayServer.window_get_position())
+
 ## Factor de escala fijo según el DPI de la pantalla (125 %, 150 %…); ASH_UI_SCALE lo fuerza.
 func ui_scale() -> float:
 	var forced := OS.get_environment("ASH_UI_SCALE")
@@ -68,7 +112,7 @@ func _apply_scale() -> void:
 	var win := get_window()
 	var s := ui_scale()
 	win.content_scale_factor = s
-	win.min_size = Vector2i((Vector2(BASE_MIN_SIZE) * s).round())
+	win.min_size = Vector2i.ZERO if _splash else Vector2i((Vector2(BASE_MIN_SIZE) * s).round())
 
 # ── Construcción ─────────────────────────────────────────
 
@@ -99,14 +143,14 @@ func _build_bar(root: Control) -> void:
 	logo.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_child(logo)
-	var title := Label.new()
+	var title := CapsLabel.new()
 	title.theme_type_variation = "HeadLabel"
 	title.add_theme_font_size_override("font_size", 15)
 	title.text = "ARCADE STARS"
 	title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_child(title)
-	var version := Label.new()
+	var version := CapsLabel.new()
 	version.theme_type_variation = "MutedLabel"
 	version.text = "v" + AppConfig.launcher_version()
 	version.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -186,6 +230,7 @@ func _build_grips(root: Control) -> void:
 		g.gui_input.connect(func(e: InputEvent):
 			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
 				_snap = Snap.NONE
+				_resizing = true
 				_refresh_state()
 				DisplayServer.window_start_resize(edge))
 		_grips.add_child(g)
@@ -204,6 +249,15 @@ func _on_drag_input(event: InputEvent) -> void:
 		_grab_offset = _press_mouse - DisplayServer.window_get_position()
 
 func _process(_delta: float) -> void:
+	_step_drag()
+	var pos := Vector2(DisplayServer.window_get_position())
+	if (_dragging and _drag_started) or _resizing:
+		field_drift -= pos - _last_pos
+	_last_pos = pos
+	if _resizing and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_resizing = false
+
+func _step_drag() -> void:
 	if not _dragging:
 		return
 	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
@@ -278,8 +332,79 @@ func _restore() -> void:
 	_refresh_state()
 
 func _close() -> void:
+	request_close()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		request_close()
+
+## Pide confirmación antes de salir (botón de cerrar, Alt+F4 o cierre del sistema).
+func request_close() -> void:
+	if _confirm == null:
+		_build_confirm()
+	if Net.in_game:
+		_confirm_text.text = "You will leave the current game"
+	elif Net.in_room:
+		_confirm_text.text = "You will leave the room"
+	_confirm_text.visible = Net.in_game or Net.in_room
+	_confirm.visible = true
+
+func _confirm_exit() -> void:
 	Net.leave()
 	get_tree().quit()
+
+func _cancel_exit() -> void:
+	_confirm.visible = false
+
+func _input(event: InputEvent) -> void:
+	if _confirm == null or not _confirm.visible or not (event is InputEventKey and event.pressed):
+		return
+	if event.keycode == KEY_ESCAPE:
+		_cancel_exit()
+		get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+		_confirm_exit()
+
+func _build_confirm() -> void:
+	_confirm = ColorRect.new()
+	(_confirm as ColorRect).color = Palette.fade(Palette.VOID, 0.62)
+	_confirm.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_confirm.mouse_filter = Control.MOUSE_FILTER_STOP
+	_confirm.visible = false
+	_root.add_child(_confirm)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_confirm.add_child(center)
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", AppTheme.box(Palette.fade(Palette.BG_200, 0.97), Color.TRANSPARENT, 8, 0, 26))
+	center.add_child(panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 14)
+	panel.add_child(v)
+	var title := CapsLabel.new("Exit Arcade Stars?")
+	title.theme_type_variation = "HeadLabel"
+	title.add_theme_font_size_override("font_size", 22)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(title)
+	_confirm_text = CapsLabel.new()
+	_confirm_text.theme_type_variation = "MutedLabel"
+	_confirm_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_confirm_text)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 12)
+	v.add_child(row)
+	var cancel := Button.new()
+	cancel.text = "CANCEL"
+	cancel.custom_minimum_size.x = 120
+	cancel.pressed.connect(_cancel_exit)
+	row.add_child(cancel)
+	var exit := Button.new()
+	exit.theme_type_variation = "DangerButton"
+	exit.text = "EXIT"
+	exit.custom_minimum_size.x = 120
+	exit.pressed.connect(_confirm_exit)
+	row.add_child(exit)
 
 func _refresh_state() -> void:
 	for b in _max_buttons:

@@ -35,10 +35,10 @@ func setup(ctx) -> void:
 		Color.TRANSPARENT, _palette["acc_blue"], _palette["acc_green"], _palette["acc_pink"],
 		Color("#FFD166"), Color("#FF7A8A"), Color("#5EEAD4"), _palette["fg_100"], Color("#9A99B8"),
 	]
-	_box_hidden = Style.box(_palette["bg_400"], _fade(_palette["fg_100"], 0.10), 6, 1)
-	_box_hover = Style.box(_palette["bg_400"].lightened(0.12), _fade(_palette["acc_blue"], 0.7), 6, 1)
-	_box_open = Style.box(_fade(_palette["void"], 0.55), _fade(_palette["fg_100"], 0.03), 4, 1)
-	_box_boom = Style.box(_fade(DANGER, 0.35), DANGER, 6, 2)
+	_box_hidden = Style.box(_palette["bg_400"], Color.TRANSPARENT, 6)
+	_box_hover = Style.box(_palette["bg_400"].lightened(0.22), Color.TRANSPARENT, 6)
+	_box_open = Style.box(_fade(_palette["void"], 0.55), Color.TRANSPARENT, 4)
+	_box_boom = Style.box(_fade(DANGER, 0.4), Color.TRANSPARENT, 6)
 
 func _ready() -> void:
 	resized.connect(queue_redraw)

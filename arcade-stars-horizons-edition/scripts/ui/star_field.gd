@@ -62,10 +62,17 @@ static func _noise_texture() -> NoiseTexture2D:
 func _scale() -> float:
 	return get_window().content_scale_factor
 
+## Origen del campo en el escritorio. Al arrastrar o redimensionar la ventana con el ratón el fondo
+## se mueve RÍGIDO con ella (WindowChrome.field_drift compensa el desplazamiento): anclar las
+## estrellas al escritorio fotograma a fotograma es imposible de sincronizar con el sistema y
+## "nadan"/parpadean. Al maximizar o encajar sí se descubren otras zonas.
+func _origin() -> Vector2:
+	return Vector2(get_window().position) + WindowChrome.field_drift
+
 func _process(delta: float) -> void:
 	_t += delta
 	var win := get_window()
-	_mat.set_shader_parameter("window_origin", Vector2(win.position))
+	_mat.set_shader_parameter("window_origin", _origin())
 	_mat.set_shader_parameter("window_px", Vector2(win.size))
 	if _t >= _next_shoot:
 		_spawn_shooting_star(Vector2(win.size))
@@ -76,7 +83,7 @@ func _process(delta: float) -> void:
 # ── Estrellas fugaces ────────────────────────────────────
 
 func _spawn_shooting_star(win_px: Vector2) -> void:
-	var origin := Vector2(get_window().position)
+	var origin := _origin()
 	var s := _scale()
 	var w := win_px.x
 	var h := win_px.y
@@ -107,7 +114,7 @@ func _ease_in_out(t: float) -> float:
 	return 2.0 * t * t if t < 0.5 else 1.0 - pow(-2.0 * t + 2.0, 2.0) / 2.0
 
 func _draw_trails() -> void:
-	var origin := Vector2(get_window().position)
+	var origin := _origin()
 	var s := _scale()
 	for star in _shooting:
 		var t: float = (_t - star["start_t"]) / SHOOT_DURATION

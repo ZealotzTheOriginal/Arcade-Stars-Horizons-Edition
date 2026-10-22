@@ -14,7 +14,7 @@ func _ready() -> void:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 12)
 	add_child(h)
-	_label = Label.new()
+	_label = CapsLabel.new()
 	_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(_label)
 	_bar = ProgressBar.new()
@@ -26,7 +26,7 @@ func _ready() -> void:
 	h.add_child(_bar)
 	_button = Button.new()
 	_button.theme_type_variation = "PrimaryButton"
-	_button.text = "Update"
+	_button.text = "UPDATE"
 	_button.pressed.connect(func():
 		Updater.update_launcher()
 		refresh())
