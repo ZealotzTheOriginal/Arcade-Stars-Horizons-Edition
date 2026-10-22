@@ -28,12 +28,14 @@ func _process(_d: float) -> bool:
 		_shot("hub_room")
 		net.in_room = false
 		net.players = {1: {"name": net.local_name, "color": 0}, 7: {"name": "Vega", "color": 1}}
-		change_scene_to_packed(load("res://games/minesweeper/minesweeper.tscn") as PackedScene)
+		var loader = root.get_node("GameLoader")
+		change_scene_to_packed(load(loader.installed["minesweeper"]["scene"]) as PackedScene)
 	if frame == 90:
-		var logic := MinesweeperLogic.new({"board_size": "intermediate"}, [1, 7])
+		var logic = load("res://server/games/minesweeper/minesweeper_logic.gd").new({"board_size": "intermediate"}, [1, 7])
 		logic.reveal(1, 8, 8)
 		logic.flags[3] = 7
 		logic.flags[20] = 1
+		current_scene.start(root.get_node("GameLoader").make_context())
 		current_scene._apply_view(logic.view())
 	if frame == 110:
 		_shot("minesweeper")

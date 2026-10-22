@@ -1,12 +1,15 @@
 class_name GameRegistry
-## Metadatos de minijuegos compartidos por cliente y servidor.
-## `scene` solo lo usa el cliente; `logic` solo lo usa el servidor (autoritativo).
+## Catálogo de minijuegos conocido por cliente y servidor (no incluye el código del juego).
+## La UI del juego vive en un .pck del cliente; la lógica autoritativa la copia el servidor
+## desde games/<id>/ a server/games/<id>/ (ver tools/sync_server_logic).
+
+## Versión del contrato hub <-> juego (GameContext). Debe coincidir con manifest.json del juego.
+const API_VERSION := 1
 
 const GAMES := {
 	"minesweeper": {
 		"name": "Minesweeper",
-		"scene": "res://games/minesweeper/minesweeper.tscn",
-		"logic": "res://games/minesweeper/minesweeper_logic.gd",
+		"version": "1.0.0",
 		"min_players": 2,
 		"max_players": 4,
 		"settings": [
@@ -18,6 +21,9 @@ const GAMES := {
 		],
 	},
 }
+
+static func logic_path(game_id: String) -> String:
+	return "res://server/games/%s/%s_logic.gd" % [game_id, game_id]
 
 static func has_game(game_id: String) -> bool:
 	return GAMES.has(game_id)

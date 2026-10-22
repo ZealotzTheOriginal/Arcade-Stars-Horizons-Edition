@@ -20,7 +20,7 @@ const DEV_TOKEN_PATTERN := "^dev:[a-z0-9\\-]{4,40}$"
 
 var _peer := WebSocketMultiplayerPeer.new()
 var _db: SupabaseClient
-## peer_id -> { user_id, nickname, room_id, authed, verifying, connected_at, last_seen, msg_count, last_nick_change }
+## peer_id -> { user_id, nickname, room_id, games, authed, verifying, connected_at, last_seen, msg_count, last_nick_change }
 var _sessions: Dictionary = {}
 ## room_id -> { id, name, game_id, host_id, settings, members, colors, in_game, logic, recorded }
 var _rooms: Dictionary = {}
@@ -97,7 +97,7 @@ func _on_peer_connected(pid: int) -> void:
 		return
 	var now := Time.get_ticks_msec() / 1000.0
 	_sessions[pid] = {
-		"user_id": "", "nickname": "", "room_id": "", "authed": false, "verifying": false,
+		"user_id": "", "nickname": "", "room_id": "", "games": {}, "authed": false, "verifying": false,
 		"connected_at": now, "last_seen": now, "msg_count": 0, "last_nick_change": 0.0,
 	}
 
@@ -156,6 +156,7 @@ func _on_packet(pid: int, bytes: PackedByteArray) -> void:
 				return
 			match msg["t"]:
 				"nickname": _handle_nickname(pid, msg)
+				"games": _handle_games(pid, msg)
 				"room_create": _handle_room_create(pid, msg)
 				"room_join": _handle_room_join(pid, msg)
 				"room_leave": _remove_from_room(pid)
@@ -172,6 +173,19 @@ func _clean_nickname(value: Variant) -> String:
 		return ""
 	var v := (value as String).strip_edges()
 	return v if _nick_re.search(v) != null else ""
+
+## Juegos que el cliente dice tener instalados: { id: versión }. Solo ids y versiones válidas.
+func _clean_games(value: Variant) -> Dictionary:
+	var out := {}
+	if value is Dictionary and value.size() <= 32:
+		for id in value:
+			if id is String and GameRegistry.has_game(id) and value[id] is String and (value[id] as String).length() <= 32:
+				out[id] = value[id]
+	return out
+
+## Un jugador está listo si tiene instalada exactamente la versión que exige el catálogo.
+func _has_game(pid: int, game_id: String) -> bool:
+	return _sessions[pid]["games"].get(game_id, "") == GameRegistry.GAMES[game_id]["version"]
 
 func _verify(token: String) -> String:
 	if _dev_auth() and token.begins_with("dev:"):
@@ -203,12 +217,19 @@ func _handle_hello(pid: int, msg: Dictionary) -> void:
 	if nickname == "":
 		nickname = "Player%d" % (pid % 900 + 100)
 	s["user_id"] = user_id
+	s["games"] = _clean_games(msg.get("games"))
 	s["nickname"] = nickname
 	s["authed"] = true
 	_send(pid, {"t": "welcome", "id": pid, "nickname": nickname})
-	_db.upsert_profile(user_id, nickname)
+	print("connected: %s (games: %s)" % [nickname, s["games"]])
+	_save_profile(user_id, nickname)
 	_presence_dirty = true
 	_presence_timer = 0.0
+
+## Los usuarios de prueba (dev auth) no se guardan en Supabase.
+func _save_profile(user_id: String, nickname: String) -> void:
+	if not user_id.begins_with("dev-"):
+		_db.upsert_profile(user_id, nickname)
 
 func _handle_nickname(pid: int, msg: Dictionary) -> void:
 	var s: Dictionary = _sessions[pid]
@@ -221,11 +242,17 @@ func _handle_nickname(pid: int, msg: Dictionary) -> void:
 		return
 	s["last_nick_change"] = now
 	s["nickname"] = nickname
-	_db.upsert_profile(s["user_id"], nickname)
+	_save_profile(s["user_id"], nickname)
 	_send(pid, {"t": "welcome", "id": pid, "nickname": nickname})
 	if s["room_id"] != "":
 		_send_room_state(_rooms[s["room_id"]])
 	_presence_dirty = true
+
+func _handle_games(pid: int, msg: Dictionary) -> void:
+	_sessions[pid]["games"] = _clean_games(msg.get("games"))
+	var room := _room_of(pid)
+	if not room.is_empty():
+		_send_room_state(room)
 
 # ── Salas ────────────────────────────────────────────────
 
@@ -319,7 +346,7 @@ func _remove_from_room(pid: int) -> void:
 func _send_room_state(room: Dictionary) -> void:
 	var players := {}
 	for m in room["members"]:
-		players[m] = {"name": _sessions[m]["nickname"], "color": room["colors"][m]}
+		players[m] = {"name": _sessions[m]["nickname"], "color": room["colors"][m], "ready": _has_game(m, room["game_id"])}
 	var public_room := {
 		"id": room["id"], "name": room["name"], "game_id": room["game_id"],
 		"settings": room["settings"], "host_id": room["host_id"], "in_game": room["in_game"],
@@ -358,7 +385,15 @@ func _handle_game_start(pid: int) -> void:
 	if room["members"].size() < info["min_players"]:
 		_send_error(pid, "Not enough players")
 		return
-	var logic_script := load(info["logic"]) as GDScript
+	for m in room["members"]:
+		if not _has_game(m, room["game_id"]):
+			_send_error(pid, "%s is missing the game" % _sessions[m]["nickname"], "missing_game")
+			return
+	var logic_path := GameRegistry.logic_path(room["game_id"])
+	if not ResourceLoader.exists(logic_path):
+		_send_error(pid, "Game unavailable on the server", "no_logic")
+		return
+	var logic_script := load(logic_path) as GDScript
 	room["logic"] = logic_script.new(room["settings"], room["members"])
 	room["in_game"] = true
 	room["recorded"] = false

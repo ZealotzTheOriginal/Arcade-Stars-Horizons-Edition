@@ -35,6 +35,7 @@ func _ready() -> void:
 	Net.left_room.connect(_on_left_room)
 	Net.server_error.connect(func(m): _set_status(m, true))
 	Backend.status_changed.connect(_on_backend_status)
+	GameLoader.installed_changed.connect(_on_installed_changed)
 	_show_view()
 	_refresh_users()
 	_refresh_rooms()
@@ -92,6 +93,10 @@ func _build_header() -> Control:
 	_status = Label.new()
 	_status.theme_type_variation = "MutedLabel"
 	h.add_child(_status)
+	var folder_btn := Button.new()
+	folder_btn.text = "Games folder"
+	folder_btn.pressed.connect(_open_games_folder)
+	h.add_child(folder_btn)
 	_name_input = LineEdit.new()
 	_name_input.text = Net.local_name
 	_name_input.custom_minimum_size.x = 180
@@ -191,9 +196,7 @@ func _build_room_view() -> Control:
 	gl.text = "GAME"
 	v.add_child(gl)
 	_game_select = OptionButton.new()
-	for id in GameRegistry.GAMES:
-		_game_select.add_item(GameRegistry.game_name(id))
-		_game_select.set_item_metadata(_game_select.item_count - 1, id)
+	_fill_game_select()
 	_game_select.item_selected.connect(func(i): Net.set_room_game(_game_select.get_item_metadata(i)))
 	v.add_child(_game_select)
 
@@ -218,6 +221,13 @@ func _build_room_view() -> Control:
 	return p
 
 # ── Refrescos ────────────────────────────────────────────
+
+func _fill_game_select() -> void:
+	_game_select.clear()
+	for id in GameRegistry.GAMES:
+		var suffix := "" if GameLoader.is_installed(id) else " (not installed)"
+		_game_select.add_item(GameRegistry.game_name(id) + suffix)
+		_game_select.set_item_metadata(_game_select.item_count - 1, id)
 
 func _show_view() -> void:
 	_lobby_view.visible = not Net.in_room
@@ -285,7 +295,8 @@ func _room_card(r: Dictionary) -> Control:
 	info.add_child(n)
 	var d := Label.new()
 	d.theme_type_variation = "MutedLabel"
-	d.text = "%s · host %s · %d/%d%s" % [GameRegistry.game_name(r["game_id"]), r["host_name"], r["players"], r["max"], " · in game" if r["in_game"] else ""]
+	d.text = "%s · host %s · %d/%d%s%s" % [GameRegistry.game_name(r["game_id"]), r["host_name"], r["players"], r["max"],
+			" · in game" if r["in_game"] else "", "" if GameLoader.is_installed(r["game_id"]) else " · not installed"]
 	info.add_child(d)
 	var b := Button.new()
 	b.text = "Join"
@@ -302,6 +313,7 @@ func _refresh_room() -> void:
 	for i in _game_select.item_count:
 		if _game_select.get_item_metadata(i) == Net.room.get("game_id"):
 			idx = i
+	_fill_game_select()
 	_game_select.select(idx)
 	_game_select.disabled = not Net.is_host()
 	_refresh_settings()
@@ -311,7 +323,8 @@ func _refresh_room() -> void:
 		_room_players.add_child(_player_card(id))
 	var info: Dictionary = GameRegistry.GAMES.get(Net.room.get("game_id", ""), {})
 	_start_btn.visible = Net.is_host()
-	_start_btn.disabled = Net.players.size() < info.get("min_players", 1)
+	var all_ready: bool = Net.players.values().all(func(p): return p.get("ready", false))
+	_start_btn.disabled = Net.players.size() < info.get("min_players", 1) or not all_ready
 
 func _refresh_settings() -> void:
 	for c in _settings_box.get_children():
@@ -351,6 +364,12 @@ func _player_card(id: int) -> Control:
 	l.text = Net.player_name(id) + ("  (you)" if id == Net.my_id() else "")
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(l)
+	if not Net.players[id].get("ready", false):
+		var missing := Label.new()
+		missing.theme_type_variation = "MutedLabel"
+		missing.text = "MISSING GAME"
+		missing.add_theme_color_override("font_color", ERROR_COLOR)
+		h.add_child(missing)
 	if id == Net.room.get("host_id"):
 		var tag := Label.new()
 		tag.theme_type_variation = "MutedLabel"
@@ -359,6 +378,22 @@ func _player_card(id: int) -> Control:
 	return card
 
 # ── Acciones ─────────────────────────────────────────────
+
+func _notification(what: int) -> void:
+	# Al volver a la ventana se detectan .pck recién copiados a la carpeta de juegos.
+	if what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		GameLoader.scan()
+
+func _on_installed_changed() -> void:
+	if Backend.is_online():
+		Net.send_installed_games()
+	_fill_game_select()
+	_refresh_rooms()
+	_refresh_room()
+
+func _open_games_folder() -> void:
+	DirAccess.make_dir_recursive_absolute(GameLoader.user_games_dir())
+	OS.shell_open(GameLoader.user_games_dir())
 
 func _apply_name(new_name: String) -> void:
 	new_name = new_name.strip_edges()

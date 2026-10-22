@@ -80,7 +80,7 @@ func _process(delta: float) -> void:
 		WebSocketPeer.STATE_OPEN:
 			if not _hello_sent:
 				_hello_sent = true
-				send({"t": "hello", "token": Auth.access_token, "nickname": Net.local_name})
+				send({"t": "hello", "token": Auth.access_token, "nickname": Net.local_name, "games": GameLoader.installed_versions()})
 			while _ws and _ws.get_available_packet_count() > 0:
 				_handle_packet(_ws.get_packet())
 			_ping_timer += delta

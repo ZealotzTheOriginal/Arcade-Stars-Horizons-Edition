@@ -18,7 +18,7 @@ const PLAYER_COLORS: Array[Color] = [
 const NICKNAME_PATTERN := "^[A-Za-z0-9_\\- ]{3,16}$"
 
 var local_name := "Player%d" % (randi() % 900 + 100)
-## peer_id -> { "name": String, "color": int }
+## peer_id -> { "name": String, "color": int, "ready": bool }  (ready = tiene el juego de la sala)
 var players: Dictionary = {}
 ## { "id", "name", "game_id", "settings", "host_id", "in_game" }
 var room: Dictionary = {}
@@ -73,6 +73,10 @@ func start_game() -> void:
 
 func return_to_room() -> void:
 	Backend.send({"t": "game_back"})
+
+## Informa al servidor de los juegos instalados (tras copiar/actualizar un .pck).
+func send_installed_games() -> void:
+	Backend.send({"t": "games", "games": GameLoader.installed_versions()})
 
 func send_game_ready() -> void:
 	Backend.send({"t": "game_ready"})
