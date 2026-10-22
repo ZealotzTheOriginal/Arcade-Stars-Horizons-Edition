@@ -1,10 +1,15 @@
 extends Control
-## Buscaminas multijugador. El servidor es autoritativo: los clientes solo envían
-## intenciones (revelar / bandera) y reciben el estado público (`view`).
-## Contrato con el Hub: el nodo raíz expone `start(players, settings)`.
+## Buscaminas multijugador. El servidor es autoritativo: el cliente solo envía
+## intenciones (revelar / bandera) y pinta la vista pública (`view`) que recibe.
+## Contrato con el hub: el nodo raíz expone `start(ctx)`. `ctx` solo da datos de jugadores y acciones;
+## la estética es propia del juego (style.gd).
 
+const MineBoard = preload("res://minesweeper/mine_board.gd")
+const Style = preload("res://minesweeper/style.gd")
+
+var _ctx
 var _view: Dictionary = {}
-var _board: MineBoard
+var _board
 var _turn_label: Label
 var _flags_label: Label
 var _score_box: VBoxContainer
@@ -12,19 +17,15 @@ var _banner: PanelContainer
 var _banner_title: Label
 var _banner_sub: Label
 var _back_btn: Button
-var _built := false
 
-func _ready() -> void:
-	theme = AppTheme.get_theme()
+## Llamado por el hub cuando la escena ya está en el árbol.
+func start(ctx) -> void:
+	_ctx = ctx
+	theme = Style.build_theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
-
-## Llamado por GameLoader cuando la escena ya está en el árbol.
-func start(_players: Dictionary, _settings: Dictionary) -> void:
-	if not _built:
-		_build()
-	Net.game_view.connect(_apply_view)
-	Net.send_game_ready()
+	ctx.view_received.connect(_apply_view)
+	ctx.send_ready()
 
 func _apply_view(v: Dictionary) -> void:
 	_view = v
@@ -32,20 +33,13 @@ func _apply_view(v: Dictionary) -> void:
 
 # ── Entrada del tablero ──────────────────────────────────
 
-func _on_reveal(row: int, col: int) -> void:
-	_send_action(row, col, false)
-
-func _on_flag(row: int, col: int) -> void:
-	_send_action(row, col, true)
-
 func _send_action(row: int, col: int, flag: bool) -> void:
-	Net.send_game_action({"row": row, "col": col, "flag": flag})
+	_ctx.send_action({"row": row, "col": col, "flag": flag})
 
 # ── UI ───────────────────────────────────────────────────
 
 func _build() -> void:
-	_built = true
-	add_child(StarField.new())
+	add_child(Style.create_background())
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "right", "top", "bottom"]:
@@ -55,7 +49,6 @@ func _build() -> void:
 	root.add_theme_constant_override("separation", 20)
 	margin.add_child(root)
 
-	# Panel lateral
 	var side_panel := PanelContainer.new()
 	side_panel.theme_type_variation = "GlassPanel"
 	side_panel.custom_minimum_size.x = 260
@@ -85,14 +78,13 @@ func _build() -> void:
 	sv.add_child(_score_box)
 	_back_btn = Button.new()
 	_back_btn.theme_type_variation = "PrimaryButton"
-	_back_btn.pressed.connect(_on_back_pressed)
+	_back_btn.pressed.connect(func(): _ctx.back_to_room())
 	sv.add_child(_back_btn)
 	var quit := Button.new()
 	quit.text = "Leave"
-	quit.pressed.connect(func(): Net.leave())
+	quit.pressed.connect(func(): _ctx.leave())
 	sv.add_child(quit)
 
-	# Tablero + banner de fin
 	var stage := Control.new()
 	stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.add_child(stage)
@@ -101,8 +93,9 @@ func _build() -> void:
 	board_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	stage.add_child(board_panel)
 	_board = MineBoard.new()
-	_board.cell_reveal.connect(_on_reveal)
-	_board.cell_flag.connect(_on_flag)
+	_board.setup(_ctx)
+	_board.cell_reveal.connect(func(r, c): _send_action(r, c, false))
+	_board.cell_flag.connect(func(r, c): _send_action(r, c, true))
 	board_panel.add_child(_board)
 
 	_banner = PanelContainer.new()
@@ -129,15 +122,15 @@ func _refresh() -> void:
 	_board.set_view(_view)
 	var over: bool = _view["over"]
 	var turn: int = _view["turn"]
-	var mine := turn == Net.my_id()
+	var mine: bool = turn == _ctx.my_id()
 	_board.interactive = mine and not over
 	_flags_label.text = "Mines left: %d" % _view["flags_left"]
 	if over:
 		_turn_label.text = "Game over"
-		_turn_label.add_theme_color_override("font_color", Palette.FG_100)
+		_turn_label.add_theme_color_override("font_color", Style.PALETTE["fg_100"])
 	else:
-		_turn_label.text = "Your turn" if mine else "%s's turn" % Net.player_name(turn)
-		_turn_label.add_theme_color_override("font_color", Net.player_color(turn))
+		_turn_label.text = "Your turn" if mine else "%s's turn" % _ctx.player_name(turn)
+		_turn_label.add_theme_color_override("font_color", _ctx.player_color(turn))
 
 	for c in _score_box.get_children():
 		c.queue_free()
@@ -147,40 +140,39 @@ func _refresh() -> void:
 
 	_banner.visible = over
 	if over:
-		var winner: int = _view["winner"]
-		var wname := Net.player_name(winner)
+		var wname: String = _ctx.player_name(_view["winner"])
 		match _view["reason"]:
 			"mine":
 				_banner_title.text = "BOOM!"
-				_banner_sub.text = "%s hit a mine. %s wins." % [Net.player_name(_view["exploded_by"]), wname]
+				_banner_sub.text = "%s hit a mine. %s wins." % [_ctx.player_name(_view["exploded_by"]), wname]
 			"cleared":
 				_banner_title.text = "Board cleared"
 				_banner_sub.text = "%s wins." % wname
 			_:
 				_banner_title.text = "Opponents left"
 				_banner_sub.text = "%s wins." % wname
-		_banner_title.add_theme_color_override("font_color", MineBoard.DANGER if _view["reason"] == "mine" else Palette.ACC_GREEN)
-	_back_btn.text = "Back to room" if Net.is_host() else "Waiting for host…"
-	_back_btn.disabled = not (over and Net.is_host())
-	_back_btn.visible = true
+		_banner_title.add_theme_color_override("font_color", _board.DANGER if _view["reason"] == "mine" else Style.PALETTE["acc_green"])
+	_back_btn.text = "Back to room" if _ctx.is_host() else "Waiting for host…"
+	_back_btn.disabled = not (over and _ctx.is_host())
 
 func _score_row(id: int, score: int, active: bool) -> Control:
 	var card := PanelContainer.new()
 	card.theme_type_variation = "CardPanel"
+	var color: Color = _ctx.player_color(id)
 	if active:
-		var sb := AppTheme.box(Palette.fade(Net.player_color(id), 0.12), Net.player_color(id), 12, 1)
+		var sb: StyleBoxFlat = Style.box(Color(color.r, color.g, color.b, 0.12), color, 12, 1)
 		sb.set_content_margin_all(12)
 		card.add_theme_stylebox_override("panel", sb)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
 	card.add_child(h)
 	var dot := ColorRect.new()
-	dot.color = Net.player_color(id)
+	dot.color = color
 	dot.custom_minimum_size = Vector2(10, 10)
 	dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(dot)
 	var n := Label.new()
-	n.text = Net.player_name(id) + (" (you)" if id == Net.my_id() else "")
+	n.text = _ctx.player_name(id) + (" (you)" if id == _ctx.my_id() else "")
 	n.clip_text = true
 	n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(n)
@@ -190,6 +182,3 @@ func _score_row(id: int, score: int, active: bool) -> Control:
 	s.text = str(score)
 	h.add_child(s)
 	return card
-
-func _on_back_pressed() -> void:
-	Net.return_to_room()

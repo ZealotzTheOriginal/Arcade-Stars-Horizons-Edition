@@ -18,6 +18,10 @@ RUN curl -fsSL -o /tmp/godot.zip \
 
 WORKDIR /app
 COPY arcade-stars-horizons-edition/ /app/
+# La lógica autoritativa de los juegos vive en games/<id>/; se copia a server/games/<id>/.
+COPY games/ /tmp/games_src/
+COPY tools/sync_server_logic.sh /tmp/sync_server_logic.sh
+RUN sh /tmp/sync_server_logic.sh /tmp/games_src /app/server/games && rm -rf /tmp/games_src /tmp/sync_server_logic.sh
 
 # Importa recursos (genera .godot/) para que los scripts compartidos con el cliente carguen bien.
 RUN godot --headless --path /app --import || true

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://minesweeper/dev/dev_main.gd" id="1_dev"]
+
+[node name="DevMain" type="Node"]
+script = ExtResource("1_dev")

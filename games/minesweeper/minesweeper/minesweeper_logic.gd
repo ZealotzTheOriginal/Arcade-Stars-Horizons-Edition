@@ -1,4 +1,3 @@
-class_name MinesweeperLogic
 extends RefCounted
 ## Reglas del Buscaminas competitivo por turnos (port de backend/app/games/minesweeper).
 ## Solo lo instancia el servidor; los clientes reciben `view()`.

@@ -11,3 +11,7 @@
 
 # Backups
 *.rar
+
+# Generados: lógica de juegos copiada al servidor y .pck exportados
+arcade-stars-horizons-edition/server/games/
+dist/
