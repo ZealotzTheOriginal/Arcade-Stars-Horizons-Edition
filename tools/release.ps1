@@ -91,13 +91,21 @@ $manifestPath = Join-Path $catalogDir "manifest.json"
 Write-Host "manifest -> $manifestPath"
 
 # ── Publicación ──
+# `gh` escribe en stderr cuando algo no existe; con $ErrorActionPreference = "Stop" eso abortaría el script.
+function Test-Release($tag) {
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    gh release view $tag 2>&1 | Out-Null
+    $exists = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $prev
+    return $exists
+}
+function Publish-Release($tag, $file, $title) {
+    if (Test-Release $tag) { gh release upload $tag $file --clobber } else { gh release create $tag $file --title $title --notes $title }
+    if ($LASTEXITCODE -ne 0) { throw "gh failed for $tag" }
+}
 if ($Publish) {
-    foreach ($t in $tags) {
-        gh release view $t[0] *> $null
-        if ($LASTEXITCODE -eq 0) { gh release upload $t[0] $t[1] --clobber } else { gh release create $t[0] $t[1] --title $t[2] --notes "$($t[2])" }
-    }
-    gh release view catalog *> $null
-    if ($LASTEXITCODE -eq 0) { gh release upload catalog $manifestPath --clobber } else { gh release create catalog $manifestPath --title "Catalog" --notes "Release manifest (generated)" }
+    foreach ($t in $tags) { Publish-Release $t[0] $t[1] $t[2] }
+    Publish-Release "catalog" $manifestPath "Catalog"
     Write-Host "Published. Next: git push (rebuilds the server)."
 } else {
     Write-Host "Dry run: nothing published (use -Publish)."
