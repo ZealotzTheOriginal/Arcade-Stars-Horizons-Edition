@@ -4,6 +4,7 @@ extends Node
 
 signal status_changed
 signal message(msg: Dictionary)
+signal catalog_changed
 
 enum State { OFFLINE, SIGNING_IN, CONNECTING, ONLINE }
 
@@ -15,6 +16,7 @@ const MAX_PACKET := 1 << 16
 var state := State.OFFLINE
 var status_text := ""
 var my_id := 0
+var min_launcher := "0.0.0"
 
 var _ws: WebSocketPeer
 var _wanted := false
@@ -22,6 +24,23 @@ var _hello_sent := false
 var _ping_timer := 0.0
 var _retry_timer := 0.0
 var _connecting_for := 0.0
+
+const CATALOG_CACHE := "user://catalog.cache"
+
+func _ready() -> void:
+	_load_catalog_cache()
+
+func _load_catalog_cache() -> void:
+	var f := FileAccess.open(CATALOG_CACHE, FileAccess.READ)
+	if f:
+		var cached: Variant = f.get_var()
+		if cached is Dictionary:
+			GameRegistry.set_catalog(cached)
+
+func _save_catalog_cache() -> void:
+	var f := FileAccess.open(CATALOG_CACHE, FileAccess.WRITE)
+	if f:
+		f.store_var(GameRegistry.games)
 
 func start() -> void:
 	_wanted = true
@@ -80,7 +99,7 @@ func _process(delta: float) -> void:
 		WebSocketPeer.STATE_OPEN:
 			if not _hello_sent:
 				_hello_sent = true
-				send({"t": "hello", "token": Auth.access_token, "nickname": Net.local_name, "games": GameLoader.installed_versions()})
+				send({"t": "hello", "token": Auth.access_token, "nickname": Net.local_name, "games": GameLoader.installed_versions(), "launcher": AppConfig.launcher_version()})
 			while _ws and _ws.get_available_packet_count() > 0:
 				_handle_packet(_ws.get_packet())
 			_ping_timer += delta
@@ -106,11 +125,18 @@ func _handle_packet(bytes: PackedByteArray) -> void:
 		"welcome":
 			my_id = msg["id"]
 			Net.local_name = msg["nickname"]
+			min_launcher = str(msg.get("min_launcher", "0.0.0"))
+			if msg.get("catalog") is Dictionary:
+				GameRegistry.set_catalog(msg["catalog"])
+				_save_catalog_cache()
+				catalog_changed.emit()
 			_set_state(State.ONLINE, "")
 		"error":
 			match msg.get("code"):
 				"auth":
 					Auth.access_token = ""    # fuerza renovar sesión en el siguiente intento
+				"outdated":
+					_wanted = false           # el servidor exige actualizar el launcher (lo gestiona Updater)
 				"replaced":
 					_wanted = false           # otra instancia tomó la sesión: no pelear por ella
 	message.emit(msg)

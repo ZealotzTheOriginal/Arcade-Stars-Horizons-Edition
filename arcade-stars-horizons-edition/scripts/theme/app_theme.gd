@@ -69,6 +69,28 @@ static func get_theme() -> Theme:
 		t.set_color(c, "PrimaryButton", Palette.VOID)
 	t.set_color("font_disabled_color", "PrimaryButton", Palette.fade(Palette.VOID, 0.5))
 
+	# Pestañas del hub
+	t.add_type("TabButton")
+	t.set_type_variation("TabButton", "Button")
+	var tab_off := box(Color.TRANSPARENT, Color.TRANSPARENT, 10, 0, 16)
+	var tab_on := box(Palette.fade(Palette.BG_300, 0.85), Color.TRANSPARENT, 10, 0, 16)
+	tab_on.border_width_bottom = 2
+	tab_on.border_color = Palette.ACC_GREEN
+	t.set_stylebox("normal", "TabButton", tab_off)
+	t.set_stylebox("hover", "TabButton", box(Palette.fade(Palette.BG_300, 0.5), Color.TRANSPARENT, 10, 0, 16))
+	t.set_stylebox("pressed", "TabButton", tab_on)
+	t.set_stylebox("hover_pressed", "TabButton", tab_on)
+	t.set_stylebox("disabled", "TabButton", tab_off)
+	t.set_color("font_color", "TabButton", Palette.fade(Palette.FG_200, 0.65))
+	t.set_color("font_hover_color", "TabButton", Palette.FG_100)
+	t.set_color("font_pressed_color", "TabButton", Palette.FG_100)
+	t.set_color("font_hover_pressed_color", "TabButton", Palette.FG_100)
+	t.set_color("font_disabled_color", "TabButton", Palette.fade(Palette.FG_200, 0.3))
+
+	# Barras de progreso
+	t.set_stylebox("background", "ProgressBar", box(Palette.fade(Palette.FG_100, 0.10), Color.TRANSPARENT, 999))
+	t.set_stylebox("fill", "ProgressBar", box(Palette.ACC_GREEN, Color.TRANSPARENT, 999))
+
 	# Inputs
 	var field := box(Palette.fade(Palette.VOID, 0.6), Palette.fade(Palette.FG_100, 0.12), 10, 1, 12)
 	t.set_stylebox("normal", "LineEdit", field)

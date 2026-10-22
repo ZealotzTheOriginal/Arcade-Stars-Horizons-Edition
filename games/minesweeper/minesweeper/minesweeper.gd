@@ -42,8 +42,9 @@ func _build() -> void:
 	add_child(Style.create_background())
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for side in ["left", "right", "top", "bottom"]:
+	for side in ["left", "right", "bottom"]:
 		margin.add_theme_constant_override("margin_" + side, 24)
+	margin.add_theme_constant_override("margin_top", 48)    # deja sitio a los controles de ventana del hub
 	add_child(margin)
 	var root := HBoxContainer.new()
 	root.add_theme_constant_override("separation", 20)

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copia la lógica autoritativa de cada juego (games/<id>/<id>/<id>_logic.gd) a server/games/<id>/,
+# Copia la lógica autoritativa y el manifest de cada juego (games/<id>/<id>/) a server/games/<id>/,
 # que es donde el servidor la busca (GameRegistry.logic_path). La carpeta destino es generada.
 # Uso: tools/sync_server_logic.sh [carpeta_games] [carpeta_destino]
 set -e
@@ -17,5 +17,6 @@ for dir in "$GAMES"/*/; do
   fi
   mkdir -p "$OUT/$id"
   cp "$src" "$OUT/$id/"
+  cp "$dir$id/manifest.json" "$OUT/$id/"
   echo "synced $id"
 done

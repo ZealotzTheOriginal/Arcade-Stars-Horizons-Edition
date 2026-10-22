@@ -32,6 +32,11 @@ func hub_theme() -> Theme:
 func create_hub_background() -> Control:
 	return StarField.new()
 
+## Barra de ventana en el juego: true = grupo flotante discreto arriba a la derecha (por defecto),
+## false = sin controles (p. ej. pantalla completa; Alt+F4 sigue cerrando).
+func set_window_controls_visible(visible: bool) -> void:
+	WindowChrome.set_mode(WindowChrome.Mode.PILL if visible else WindowChrome.Mode.HIDDEN)
+
 func send_ready() -> void:
 	Net.send_game_ready()
 

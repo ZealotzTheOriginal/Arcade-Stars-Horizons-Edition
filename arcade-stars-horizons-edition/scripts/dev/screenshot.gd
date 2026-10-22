@@ -7,34 +7,46 @@ var frame := 0
 func _initialize() -> void:
 	root.size = Vector2i(1280, 720)
 
+func _tab(name: String) -> void:
+	var b: Button = current_scene._tab_buttons[name]
+	b.button_pressed = true
+	b.pressed.emit()
+
 func _process(_d: float) -> bool:
 	frame += 1
 	var net = root.get_node("Net")
 	var lobby = root.get_node("Lobby")
+	var updater = root.get_node("Updater")
 	if frame == 5:
 		change_scene_to_file("res://scenes/main.tscn")
 	if frame == 30:
+		GameRegistry.set_catalog({
+			"minesweeper": {"name": "Minesweeper", "version": "1.1.0", "min_players": 2, "max_players": 4, "settings": []},
+			"tictactoe": {"name": "Tic Tac Toe", "version": "1.0.0", "min_players": 2, "max_players": 2, "settings": []},
+		})
+		root.get_node("Backend").catalog_changed.emit()
 		lobby.users = {1: {"name": net.local_name, "room_name": ""}, 2: {"name": "Vega", "room_name": "Orion Nebula"}, 3: {"name": "Sirius", "room_name": ""}}
 		lobby.rooms = [{"id": "AB3X9", "name": "Orion Nebula", "game_id": "minesweeper", "players": 1, "max": 4, "in_game": false, "host_name": "Vega"}]
 		lobby.users_changed.emit()
 		lobby.rooms_changed.emit()
+		updater.manifest = {"launcher": {"version": "1.2.0", "url": "x", "sha256": "0".repeat(64)}, "games": {"minesweeper": {"version": "1.1.0", "url": "x", "sha256": "0".repeat(64)}}}
+		updater.manifest_changed.emit()
 	if frame == 50:
 		_shot("hub_lobby")
-		net.players = {1: {"name": net.local_name, "color": 0}, 2: {"name": "Vega", "color": 1}}
-		net.room = {"id": "AB3X9", "name": "Orion Nebula", "game_id": "minesweeper", "settings": {}, "host_id": 0, "in_game": false}
-		net.in_room = true
-		net.connected_to_room.emit()
+		_tab("library")
+	if frame == 60:
+		_shot("hub_library")
+		_tab("settings")
 	if frame == 70:
-		_shot("hub_room")
-		net.in_room = false
+		_shot("hub_settings")
 		net.players = {1: {"name": net.local_name, "color": 0}, 7: {"name": "Vega", "color": 1}}
 		var loader = root.get_node("GameLoader")
+		root.get_node("WindowChrome").set_mode(1)    # PILL
 		change_scene_to_packed(load(loader.installed["minesweeper"]["scene"]) as PackedScene)
 	if frame == 90:
 		var logic = load("res://server/games/minesweeper/minesweeper_logic.gd").new({"board_size": "intermediate"}, [1, 7])
 		logic.reveal(1, 8, 8)
 		logic.flags[3] = 7
-		logic.flags[20] = 1
 		current_scene.start(root.get_node("GameLoader").make_context())
 		current_scene._apply_view(logic.view())
 	if frame == 110:
@@ -44,4 +56,4 @@ func _process(_d: float) -> bool:
 
 func _shot(n: String) -> void:
 	root.get_texture().get_image().save_png("user://shot_%s.png" % n)
-	print("saved ", OS.get_user_data_dir(), "/shot_", n, ".png")
+	print("saved ", n)

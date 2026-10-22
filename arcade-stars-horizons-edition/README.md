@@ -31,37 +31,43 @@ Cliente (hub .exe + games/*.pck) ──wss──► Servidor Godot headless (Ren
 
 ## Juegos como `.pck`
 
-El hub **no incluye ningún juego**. Cada `.pck` se busca en (por orden):
-`user://games/` (botón *Games folder* del hub) · `<carpeta del .exe>/games/` · en el editor, `<repo>/dist/games/`.
+El hub **no incluye ningún juego**. Cada `.pck` se busca en `user://games/` (Settings → *Open games folder*),
+`<carpeta del .exe>/games/` y, en el editor, `<repo>/dist/games/`. Si un juego está en varias, gana la **versión más alta**.
 Con la variable `ASH_GAMES_DIR` se usa solo esa carpeta (pruebas).
-Al volver a la ventana del hub se detectan `.pck` recién copiados. Para **actualizar** un `.pck` ya cargado, reinicia el hub.
+Al volver a la ventana del hub se detectan `.pck` recién copiados.
+
+**Biblioteca (pestaña *Library*):** muestra el catálogo que envía el servidor con el estado de cada juego
+(Installed / Update available / Not installed) y descarga o actualiza el `.pck` desde GitHub Releases
+(verificación SHA-256, solo desde el repo de releases). Si el juego ya estaba cargado, la actualización se aplica al reiniciar.
 
 Un `.pck` ejecuta código: instala solo los que vengan de una fuente de confianza.
 El hub solo monta `.pck` cuyo nombre coincide con un juego del catálogo y cuyo `manifest.json` es válido.
 
 ### Contrato de un juego
-- **`res://<id>/manifest.json`**: `{ "id", "version", "api_version", "scene" }`. `api_version` debe ser `GameRegistry.API_VERSION`;
-  `version` debe coincidir con la del catálogo (si no, el jugador cuenta como "sin el juego").
+- **`res://<id>/manifest.json`**: `{ id, name, version, api_version, scene, min_players, max_players, settings }`.
+  Es la **fuente del catálogo**: el servidor lo lee de `server/games/<id>/manifest.json` y lo envía a los clientes.
+  `api_version` = `GameRegistry.API_VERSION`; la `version` instalada debe ser exactamente la del catálogo
+  (si no, el jugador cuenta como "sin el juego" y la Biblioteca ofrece actualizar).
 - **Escena raíz** con `start(ctx)`. `ctx` (`GameContext`) es **funcional**: `my_id()`, `is_host()`, `player_name(id)`,
   `player_color(id)`, señal `view_received(view)`, `send_ready()`, `send_action(payload)`, `back_to_room()`, `leave()`.
 - **Estética: libre.** El juego trae su propio estilo (ver `games/minesweeper/minesweeper/style.gd`).
   Opcionalmente puede usar `ctx.hub_theme()` / `ctx.create_hub_background()` para seguir el diseño del hub.
+- **Ventana:** el launcher es sin bordes y su barra vive en un autoload. En juego se muestra un grupo flotante discreto
+  arriba a la derecha (deja ~48 px libres arriba a la derecha); `ctx.set_window_controls_visible(false)` lo oculta.
 - **Lógica del servidor** `res://<id>/<id>_logic.gd`: `_init(settings, peer_ids)`, `handle_action(pid, payload) -> bool`,
   `view()`, `remove_player(pid)`, `is_over()`, `results()`. El servidor la carga desde `server/games/<id>/` (generado con `tools/sync_server_logic`).
 - Para probarlo solo: abrir `games/<id>/` en Godot y ejecutar (usa `dev/mock_context.gd`).
 
 ### Añadir un juego
-1. Crear `games/<id>/` (proyecto Godot con preset `pck`), con el contrato anterior.
-2. Añadir la entrada en `GameRegistry.GAMES` (con `version`).
-3. `tools\build_games.ps1` → `dist/games/<id>.pck`.
-4. Commit + push (Render reconstruye la imagen con la lógica nueva).
+1. Crear `games/<id>/` (proyecto Godot con preset `pck`), con el contrato anterior y su `manifest.json`.
+2. `toolselease.ps1 -Games <id> -Publish` y después `git push` (ver *Publicar versiones*).
 
 ## Desarrollo local
 
 ```
 # generar .pck y copiar la lógica al servidor
-.\tools\build_games.ps1
-.\tools\sync_server_logic.ps1
+.	ools\build_games.ps1
+.	ools\sync_server_logic.ps1
 # terminal 1: servidor sin Supabase
 ASH_DEV_AUTH=1 PORT=9081 godot --headless --path arcade-stars-horizons-edition res://server/server.tscn
 # terminales 2 y 3: clientes
@@ -71,12 +77,35 @@ ASH_DEV_AUTH=1 ASH_SERVER_URL=ws://127.0.0.1:9081 godot --path arcade-stars-hori
 `ASH_DEV_AUTH=1` omite Supabase (solo local; **nunca** en Render). `--profile=N` da una sesión anónima distinta por instancia.
 Con Supabase real: `.env` (ver `.env.example`) y sin `ASH_DEV_AUTH`. Pruebas automáticas: `scripts/dev/smoke_test.gd`.
 
-## Distribuir el hub a otra persona
+## Publicar versiones (launcher y juegos)
 
-1. `tools\build_games.ps1` → `dist/games/minesweeper.pck`.
-2. En el editor del hub: *Project → Export → Windows Desktop → Export Project* → `dist/hub/ArcadeStars.exe` (un solo archivo).
-3. Carpeta con `ArcadeStars.exe` y `games/minesweeper.pck` al lado → zip → enviar.
-   La otra persona descomprime y ejecuta el `.exe`. Solo necesita internet (conecta por `wss://` al servidor).
+Todo se distribuye por **GitHub Releases** del repo. `toolselease.ps1` empaqueta, calcula SHA-256 y escribe el
+catálogo `manifest.json` (release con tag `catalog`, URL fija):
+
+```
+.	oolselease.ps1 -Games minesweeper              # prueba en seco: solo genera dist/release/
+.	oolselease.ps1 -Launcher -Games all -Publish   # genera y sube (necesita `gh auth login` con permisos de escritura)
+```
+- Versión del **launcher**: `config/version` en `arcade-stars-horizons-edition/project.godot`. Súbela en cada publicación.
+- Versión de un **juego**: `version` en `games/<id>/<id>/manifest.json`.
+- **Orden al publicar un juego nuevo/actualizado:** 1) `-Publish`, 2) `git push` (Render reconstruye el servidor con la
+  lógica y el catálogo nuevos). Mientras tanto los clientes no ven cambios.
+- Cambio de protocolo: sube `MIN_LAUNCHER_VERSION` en `server/server_main.gd`; los launchers antiguos reciben el
+  error `outdated` y el hub les obliga a actualizar (banner rojo).
+- El launcher se actualiza solo desde el banner *Update* (descarga el zip, verifica el hash, cierra, sustituye el `.exe` y
+  se relanza). Requiere que el `.exe` esté en una carpeta con permiso de escritura.
+
+## Distribuir el hub por primera vez
+
+`ArcadeStars.exe` (un solo archivo, con icono) + `games/minesweeper.pck` al lado, en un zip. A partir de ahí el
+launcher se actualiza solo y descarga los juegos desde la Biblioteca. Exportar a mano: *Project → Export → Windows Desktop*
+(`dist/hub/ArcadeStars.exe`); `toolselease.ps1 -Launcher` lo hace sin abrir el editor.
+
+## Iconos
+
+`assets/icons/icon.svg` es el original (blanco). `scripts/dev/make_icons.gd` lo rasteriza a `logo.png` y
+`tools/make_icons.py` lo compone sobre la placa oscura y genera `icon.png` (icono de ventana) e `icon.ico` (16–256 px,
+icono del `.exe`, referenciado en el preset de exportación). Windows necesita el ICO multi-tamaño; el PNG cuadrado sirve en ejecución.
 
 ## Despliegue del servidor
 

@@ -5,6 +5,9 @@ extends Node
 ## Variables: PORT, SUPABASE_URL, SUPABASE_SECRET_KEY, ASH_DEV_AUTH (solo desarrollo local).
 
 const DEFAULT_PORT := 9080
+## Versión mínima del launcher aceptada. Súbela cuando cambie el protocolo: los clientes antiguos
+## reciben el error "outdated" y el hub les obliga a actualizar.
+const MIN_LAUNCHER_VERSION := "0.0.0"
 const MAX_CONNECTIONS := 500
 const MAX_ROOMS := 200
 const MAX_PACKET := 8192
@@ -33,6 +36,7 @@ var _dev_re := RegEx.create_from_string(DEV_TOKEN_PATTERN)
 
 func _ready() -> void:
 	_load_env_file()
+	GameRegistry.load_server_catalog()
 	_db = SupabaseClient.new()
 	add_child(_db)
 	_peer.inbound_buffer_size = MAX_PACKET * 2
@@ -45,7 +49,7 @@ func _ready() -> void:
 		push_error("Cannot listen on port %d (error %d)" % [port, err])
 		get_tree().quit(1)
 		return
-	print("Server listening on port %d | db writes: %s | dev auth: %s" % [port, _db.can_write(), _dev_auth()])
+	print("Server listening on port %d | db writes: %s | dev auth: %s | games: %s" % [port, _db.can_write(), _dev_auth(), GameRegistry.games.keys()])
 
 func _dev_auth() -> bool:
 	return OS.get_environment("ASH_DEV_AUTH") == "1"
@@ -185,7 +189,7 @@ func _clean_games(value: Variant) -> Dictionary:
 
 ## Un jugador está listo si tiene instalada exactamente la versión que exige el catálogo.
 func _has_game(pid: int, game_id: String) -> bool:
-	return _sessions[pid]["games"].get(game_id, "") == GameRegistry.GAMES[game_id]["version"]
+	return _sessions[pid]["games"].get(game_id, "") == GameRegistry.games[game_id]["version"]
 
 func _verify(token: String) -> String:
 	if _dev_auth() and token.begins_with("dev:"):
@@ -199,6 +203,11 @@ func _handle_hello(pid: int, msg: Dictionary) -> void:
 	var token: Variant = msg.get("token")
 	if not (token is String) or (token as String).length() > 4096:
 		_kick(pid)
+		return
+	var launcher: Variant = msg.get("launcher", "0.0.0")
+	if not (launcher is String) or Semver.compare(launcher, MIN_LAUNCHER_VERSION) < 0:
+		_send_error(pid, "Launcher update required", "outdated")
+		_kick_later(pid)
 		return
 	s["verifying"] = true
 	var user_id := await _verify(token)
@@ -220,11 +229,16 @@ func _handle_hello(pid: int, msg: Dictionary) -> void:
 	s["games"] = _clean_games(msg.get("games"))
 	s["nickname"] = nickname
 	s["authed"] = true
-	_send(pid, {"t": "welcome", "id": pid, "nickname": nickname})
-	print("connected: %s (games: %s)" % [nickname, s["games"]])
+	_send_welcome(pid)
+	print("connected: %s (launcher %s, games: %s)" % [nickname, launcher, s["games"]])
 	_save_profile(user_id, nickname)
 	_presence_dirty = true
 	_presence_timer = 0.0
+
+## `welcome` lleva el catálogo de juegos (autoritativo) y la versión mínima del launcher.
+func _send_welcome(pid: int) -> void:
+	_send(pid, {"t": "welcome", "id": pid, "nickname": _sessions[pid]["nickname"],
+		"catalog": GameRegistry.games, "min_launcher": MIN_LAUNCHER_VERSION})
 
 ## Los usuarios de prueba (dev auth) no se guardan en Supabase.
 func _save_profile(user_id: String, nickname: String) -> void:
@@ -243,7 +257,7 @@ func _handle_nickname(pid: int, msg: Dictionary) -> void:
 	s["last_nick_change"] = now
 	s["nickname"] = nickname
 	_save_profile(s["user_id"], nickname)
-	_send(pid, {"t": "welcome", "id": pid, "nickname": nickname})
+	_send_welcome(pid)
 	if s["room_id"] != "":
 		_send_room_state(_rooms[s["room_id"]])
 	_presence_dirty = true
@@ -311,7 +325,7 @@ func _handle_room_join(pid: int, msg: Dictionary) -> void:
 	if room["in_game"]:
 		_send_error(pid, "Game already in progress")
 		return
-	if room["members"].size() >= GameRegistry.GAMES[room["game_id"]]["max_players"]:
+	if room["members"].size() >= GameRegistry.games[room["game_id"]]["max_players"]:
 		_send_error(pid, "Room is full")
 		return
 	room["members"].append(pid)
@@ -362,7 +376,7 @@ func _handle_room_settings(pid: int, msg: Dictionary) -> void:
 		var game_id: Variant = msg["game_id"]
 		if not (game_id is String) or not GameRegistry.has_game(game_id):
 			return
-		if room["members"].size() > GameRegistry.GAMES[game_id]["max_players"]:
+		if room["members"].size() > GameRegistry.games[game_id]["max_players"]:
 			_send_error(pid, "Too many players for that game")
 			return
 		room["game_id"] = game_id
@@ -381,7 +395,7 @@ func _handle_game_start(pid: int) -> void:
 	var room := _room_of(pid)
 	if room.is_empty() or room["host_id"] != pid or room["in_game"]:
 		return
-	var info: Dictionary = GameRegistry.GAMES[room["game_id"]]
+	var info: Dictionary = GameRegistry.games[room["game_id"]]
 	if room["members"].size() < info["min_players"]:
 		_send_error(pid, "Not enough players")
 		return
@@ -461,7 +475,7 @@ func _broadcast_presence() -> void:
 		var r: Dictionary = _rooms[id]
 		rooms.append({
 			"id": id, "name": r["name"], "game_id": r["game_id"], "players": r["members"].size(),
-			"max": GameRegistry.GAMES[r["game_id"]]["max_players"], "in_game": r["in_game"],
+			"max": GameRegistry.games[r["game_id"]]["max_players"], "in_game": r["in_game"],
 			"host_name": _sessions[r["host_id"]]["nickname"],
 		})
 	var packet := {"t": "presence", "users": users, "rooms": rooms}

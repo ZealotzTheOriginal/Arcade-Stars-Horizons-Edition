@@ -10,5 +10,6 @@ foreach ($dir in Get-ChildItem (Join-Path $root "games") -Directory) {
     if (-not (Test-Path $src)) { Write-Host "skip $id (no ${id}_logic.gd)"; continue }
     New-Item -ItemType Directory -Force (Join-Path $out $id) | Out-Null
     Copy-Item $src (Join-Path $out $id)
+    Copy-Item (Join-Path $dir.FullName "$id/manifest.json") (Join-Path $out $id)
     Write-Host "synced $id"
 }

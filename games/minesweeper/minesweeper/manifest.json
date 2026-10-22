@@ -1,6 +1,21 @@
 {
 	"id": "minesweeper",
-	"version": "1.0.0",
+	"name": "Minesweeper",
+	"version": "1.1.0",
 	"api_version": 1,
-	"scene": "res://minesweeper/minesweeper.tscn"
+	"scene": "res://minesweeper/minesweeper.tscn",
+	"min_players": 2,
+	"max_players": 4,
+	"settings": [
+		{
+			"key": "board_size",
+			"label": "BOARD",
+			"default": "normal",
+			"options": [
+				["normal", "Normal 9×9 · 10 mines"],
+				["intermediate", "Intermediate 16×16 · 40 mines"],
+				["expert", "Expert 30×16 · 99 mines"]
+			]
+		}
+	]
 }

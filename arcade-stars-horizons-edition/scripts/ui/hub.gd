@@ -21,7 +21,10 @@ var _start_btn: Button
 var _create_btn: Button
 var _status: Label
 var _room_name_input: LineEdit
-var _name_input: LineEdit
+var _library_view: Control
+var _settings_view: Control
+var _tab_buttons: Dictionary = {}    # nombre de pestaña -> Button
+var _tab := "rooms"
 
 func _ready() -> void:
 	theme = AppTheme.get_theme()
@@ -36,6 +39,7 @@ func _ready() -> void:
 	Net.server_error.connect(func(m): _set_status(m, true))
 	Backend.status_changed.connect(_on_backend_status)
 	GameLoader.installed_changed.connect(_on_installed_changed)
+	Backend.catalog_changed.connect(_on_catalog_changed)
 	_show_view()
 	_refresh_users()
 	_refresh_rooms()
@@ -51,13 +55,15 @@ func _build() -> void:
 	add_child(StarField.new())
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for side in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 28)
+	for side in ["left", "right", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 24)
+	margin.add_theme_constant_override("margin_top", WindowChrome.HEIGHT + 14)    # deja sitio a la barra de ventana
 	add_child(margin)
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 20)
+	root.add_theme_constant_override("separation", 16)
 	margin.add_child(root)
-	root.add_child(_build_header())
+	root.add_child(UpdateBanner.new())
+	root.add_child(_build_nav())
 
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -70,41 +76,35 @@ func _build() -> void:
 	body.add_child(center)
 	_lobby_view = _build_lobby_view()
 	_room_view = _build_room_view()
-	for v in [_lobby_view, _room_view]:
+	_library_view = LibraryView.new()
+	_settings_view = SettingsView.new()
+	for v in [_lobby_view, _room_view, _library_view, _settings_view]:
 		v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		center.add_child(v)
 
-func _build_header() -> Control:
+func _build_nav() -> Control:
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 12)
-	h.add_child(StarIcon.new())
-	var title := Label.new()
-	title.theme_type_variation = "HeadLabel"
-	title.text = "ARCADE STARS"
-	h.add_child(title)
-	var sub := Label.new()
-	sub.text = "Horizons Edition"
-	sub.add_theme_color_override("font_color", Palette.ACC_GREEN)
-	sub.size_flags_vertical = Control.SIZE_SHRINK_END
-	h.add_child(sub)
+	h.add_theme_constant_override("separation", 6)
+	var group := ButtonGroup.new()
+	for tab in [["rooms", "Rooms"], ["library", "Library"], ["settings", "Settings"]]:
+		var b := Button.new()
+		b.theme_type_variation = "TabButton"
+		b.text = tab[1]
+		b.toggle_mode = true
+		b.button_group = group
+		b.button_pressed = tab[0] == _tab
+		var key: String = tab[0]
+		b.pressed.connect(func():
+			_tab = key
+			_show_view())
+		_tab_buttons[key] = b
+		h.add_child(b)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(sp)
 	_status = Label.new()
 	_status.theme_type_variation = "MutedLabel"
 	h.add_child(_status)
-	var folder_btn := Button.new()
-	folder_btn.text = "Games folder"
-	folder_btn.pressed.connect(_open_games_folder)
-	h.add_child(folder_btn)
-	_name_input = LineEdit.new()
-	_name_input.text = Net.local_name
-	_name_input.custom_minimum_size.x = 180
-	_name_input.max_length = 16
-	_name_input.placeholder_text = "Nickname"
-	_name_input.text_submitted.connect(_apply_name)
-	_name_input.focus_exited.connect(func(): _apply_name(_name_input.text))
-	h.add_child(_name_input)
 	return h
 
 func _build_users_panel() -> Control:
@@ -224,21 +224,24 @@ func _build_room_view() -> Control:
 
 func _fill_game_select() -> void:
 	_game_select.clear()
-	for id in GameRegistry.GAMES:
+	for id in GameRegistry.games:
 		var suffix := "" if GameLoader.is_installed(id) else " (not installed)"
 		_game_select.add_item(GameRegistry.game_name(id) + suffix)
 		_game_select.set_item_metadata(_game_select.item_count - 1, id)
 
 func _show_view() -> void:
-	_lobby_view.visible = not Net.in_room
+	_lobby_view.visible = not Net.in_room and _tab == "rooms"
+	_library_view.visible = not Net.in_room and _tab == "library"
+	_settings_view.visible = not Net.in_room and _tab == "settings"
 	_room_view.visible = Net.in_room
+	for key in _tab_buttons:
+		_tab_buttons[key].disabled = Net.in_room
 	_refresh_room()
 
 func _on_backend_status() -> void:
 	var online := Backend.is_online()
-	_create_btn.disabled = not online
+	_create_btn.disabled = not online or GameRegistry.games.is_empty()
 	_set_status("" if online else Backend.status_text, not online and Backend.state == Backend.State.OFFLINE and Backend.status_text != "")
-	_name_input.text = Net.local_name
 	_refresh_rooms()
 	_refresh_users()
 
@@ -321,7 +324,7 @@ func _refresh_room() -> void:
 		c.queue_free()
 	for id in Net.players:
 		_room_players.add_child(_player_card(id))
-	var info: Dictionary = GameRegistry.GAMES.get(Net.room.get("game_id", ""), {})
+	var info: Dictionary = GameRegistry.games.get(Net.room.get("game_id", ""), {})
 	_start_btn.visible = Net.is_host()
 	var all_ready: bool = Net.players.values().all(func(p): return p.get("ready", false))
 	_start_btn.disabled = Net.players.size() < info.get("min_players", 1) or not all_ready
@@ -329,7 +332,7 @@ func _refresh_room() -> void:
 func _refresh_settings() -> void:
 	for c in _settings_box.get_children():
 		c.queue_free()
-	var schema: Array = GameRegistry.GAMES.get(Net.room.get("game_id", ""), {}).get("settings", [])
+	var schema: Array = GameRegistry.games.get(Net.room.get("game_id", ""), {}).get("settings", [])
 	var current: Dictionary = Net.room.get("settings", {})
 	for s in schema:
 		var l := Label.new()
@@ -384,6 +387,12 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_IN:
 		GameLoader.scan()
 
+func _on_catalog_changed() -> void:
+	_create_btn.disabled = not Backend.is_online() or GameRegistry.games.is_empty()
+	_fill_game_select()
+	_refresh_rooms()
+	_refresh_room()
+
 func _on_installed_changed() -> void:
 	if Backend.is_online():
 		Net.send_installed_games()
@@ -391,30 +400,21 @@ func _on_installed_changed() -> void:
 	_refresh_rooms()
 	_refresh_room()
 
-func _open_games_folder() -> void:
-	DirAccess.make_dir_recursive_absolute(GameLoader.user_games_dir())
-	OS.shell_open(GameLoader.user_games_dir())
-
-func _apply_name(new_name: String) -> void:
-	new_name = new_name.strip_edges()
-	if new_name == Net.local_name or Net.in_room:
-		_name_input.text = Net.local_name
-		return
-	if not Net.is_valid_nickname(new_name):
-		_set_status("Nickname: 3-16 letters, numbers, spaces, - or _", true)
-		_name_input.text = Net.local_name
-		return
-	Net.local_name = new_name
-	if Backend.is_online():
-		Net.set_nickname(new_name)
+func _default_game_id() -> String:
+	for id in GameRegistry.games:
+		if GameLoader.is_installed(id):
+			return id
+	return GameRegistry.games.keys()[0]
 
 func _on_create_pressed() -> void:
 	var rname := _room_name_input.text.strip_edges()
 	if RegEx.create_from_string(ROOM_NAME_PATTERN).search(rname) == null:
 		_set_status("Room name: 3-24 letters, numbers, spaces, - or _", true)
 		return
+	if GameRegistry.games.is_empty():
+		return
 	_set_status("")
-	Net.create_room(rname, GameRegistry.GAMES.keys()[0])
+	Net.create_room(rname, _default_game_id())
 
 func _on_left_room(reason: String) -> void:
 	_set_status(reason, reason != "")

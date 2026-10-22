@@ -8,6 +8,28 @@ const SUPABASE_PUBLISHABLE_KEY := "sb_publishable_uNr7dHS9oRfnJMzaftlPQA_EPeuret
 const SERVER_URL := "wss://arcade-stars-horizons-edition.onrender.com"
 const LOCAL_SERVER_URL := "ws://127.0.0.1:9080"
 
+## Descargas (launcher y juegos) desde GitHub Releases del repo. El catálogo es el asset
+## manifest.json del release con tag "catalog" (lo genera tools/release.ps1).
+const RELEASES_BASE := "https://github.com/ZealotzTheOriginal/Arcade-Stars-Horizons-Edition/releases/download"
+
+static func launcher_version() -> String:
+	return str(ProjectSettings.get_setting("application/config/version", "0.0.0"))
+
+## ASH_MANIFEST_URL permite probar con un servidor local de archivos.
+static func manifest_url() -> String:
+	var from_env := OS.get_environment("ASH_MANIFEST_URL")
+	return from_env if from_env != "" else RELEASES_BASE + "/catalog/manifest.json"
+
+## Solo se descargan archivos desde el repo de releases (o desde el origen del manifest de pruebas).
+static func is_trusted_download_url(url: String) -> bool:
+	if url.begins_with(RELEASES_BASE + "/"):
+		return true
+	var from_env := OS.get_environment("ASH_MANIFEST_URL")
+	if from_env == "":
+		return false
+	var origin := from_env.get_slice("/", 0) + "//" + from_env.get_slice("/", 2) + "/"    # esquema://host:puerto/
+	return url.begins_with(origin)
+
 ## Prioridad: variable de entorno ASH_SERVER_URL > SERVER_URL > servidor local.
 static func server_url() -> String:
 	var from_env := OS.get_environment("ASH_SERVER_URL")
