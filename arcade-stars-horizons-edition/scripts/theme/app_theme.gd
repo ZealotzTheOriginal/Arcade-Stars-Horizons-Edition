@@ -88,14 +88,13 @@ static func get_theme() -> Theme:
 		t.set_color(c, "PrimaryButton", Palette.VOID)
 	t.set_color("font_disabled_color", "PrimaryButton", Palette.fade(Palette.VOID, 0.5))
 
-	# Botón especial (AccentButton): fondo VOID y texto blanco; el borde animado lo dibuja su shader.
+	# Botón especial (AccentButton): fondo y borde animado los pinta su shader; aquí solo márgenes y texto.
 	t.add_type("AccentButton")
 	t.set_type_variation("AccentButton", "Button")
 	t.set_font("font", "AccentButton", font(FONT_BODY, WEIGHT_BOLD, 1))
-	t.set_stylebox("normal", "AccentButton", box(Palette.VOID, Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
-	t.set_stylebox("hover", "AccentButton", box(Palette.VOID.lightened(0.04), Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
-	t.set_stylebox("pressed", "AccentButton", box(Palette.BLACK, Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
-	t.set_stylebox("disabled", "AccentButton", box(Palette.fade(Palette.VOID, 0.7), Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
+	var accent_box := box(Color.TRANSPARENT, Color.TRANSPARENT, BUTTON_RADIUS, 0, 20)
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		t.set_stylebox(state, "AccentButton", accent_box)
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		t.set_color(c, "AccentButton", Palette.FG_100)
 	t.set_color("font_disabled_color", "AccentButton", Palette.fade(Palette.FG_100, 0.35))

@@ -107,7 +107,6 @@ func _section(text: String) -> Label:
 
 func refresh() -> void:
 	_name_input.text = Net.local_name
-	_name_input.editable = not Net.in_room
 	_check_btn.disabled = Updater.checking
 	if Updater.checking:
 		_update_status.text = "Checking…"

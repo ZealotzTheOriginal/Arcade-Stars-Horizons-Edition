@@ -36,7 +36,7 @@ func _ready() -> void:
 	Lobby.rooms_changed.connect(_refresh_rooms)
 	Net.players_changed.connect(_refresh_room)
 	Net.room_changed.connect(_refresh_room)
-	Net.connected_to_room.connect(_show_view)
+	Net.connected_to_room.connect(_on_joined_party)
 	Net.left_room.connect(_on_left_room)
 	Net.server_error.connect(func(m): _set_status(m, true))
 	Backend.status_changed.connect(_on_backend_status)
@@ -248,14 +248,23 @@ func _fill_game_select() -> void:
 		_game_select.add_item((GameRegistry.game_name(id) + suffix).to_upper())
 		_game_select.set_item_metadata(_game_select.item_count - 1, id)
 
+## La pestaña PARTY muestra la lista de parties o, si estás en una, esa party. Library y Settings
+## siguen disponibles dentro de una party (al empezar la partida se entra al juego igualmente).
 func _show_view() -> void:
-	_lobby_view.visible = not Net.in_room and _tab == "party"
-	_library_view.visible = not Net.in_room and _tab == "library"
-	_settings_view.visible = not Net.in_room and _tab == "settings"
-	_room_view.visible = Net.in_room
-	for key in _tab_buttons:
-		_tab_buttons[key].disabled = Net.in_room
+	_lobby_view.visible = _tab == "party" and not Net.in_room
+	_room_view.visible = _tab == "party" and Net.in_room
+	_library_view.visible = _tab == "library"
+	_settings_view.visible = _tab == "settings"
 	_refresh_room()
+
+## Al crear o unirse a una party se muestra su pestaña.
+func _on_joined_party() -> void:
+	_select_tab("party")
+
+func _select_tab(key: String) -> void:
+	_tab = key
+	_tab_buttons[key].button_pressed = true
+	_show_view()
 
 func _on_backend_status() -> void:
 	var online := Backend.is_online()

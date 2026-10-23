@@ -60,20 +60,33 @@ func _process(_d: float) -> bool:
 		_tab("settings")
 	if frame == 70:
 		_shot("hub_settings")
+		# Dentro de una party (simulada): vista de la party y navegación libre a Library
+		net.room = {"id": "AB3X9", "name": "Orion Nebula", "game_id": "minesweeper", "settings": {}, "host_id": 1, "in_game": false}
+		net.players = {1: {"name": net.local_name, "color": 0, "ready": true}, 7: {"name": "Vega", "color": 1, "ready": false}}
+		net.in_room = true
+		net.connected_to_room.emit()
+	if frame == 78:
+		_shot("hub_room")
+		_tab("library")
+	if frame == 86:
+		_shot("hub_room_library")
+		net.in_room = false
+		net.room = {}
+	if frame == 90:
 		net.players = {1: {"name": net.local_name, "color": 0}, 7: {"name": "Vega", "color": 1}}
 		var loader = root.get_node("GameLoader")
 		root.get_node("WindowChrome").set_mode(1)    # PILL
 		change_scene_to_packed(load(loader.installed["minesweeper"]["scene"]) as PackedScene)
-	if frame == 90:
+	if frame == 110:
 		var logic = load("res://server/games/minesweeper/minesweeper_logic.gd").new({"board_size": "intermediate"}, [1, 7])
 		logic.reveal(1, 8, 8)
 		logic.flags[3] = 7
 		current_scene.start(root.get_node("GameLoader").make_context())
 		current_scene._apply_view(logic.view())
-	if frame == 110:
+	if frame == 130:
 		_shot("minesweeper")
 		root.get_node("WindowChrome").request_close()
-	if frame == 120:
+	if frame == 140:
 		_shot("exit_confirm")
 		quit()
 	return false
