@@ -34,7 +34,7 @@ func _ready() -> void:
 	_name_input.text_submitted.connect(func(_t): _apply_name())
 	row.add_child(_name_input)
 	var apply := Button.new()
-	apply.theme_type_variation = "FlatButton"
+	apply.theme_type_variation = "CompactButton"
 	apply.text = "APPLY"
 	apply.pressed.connect(_apply_name)
 	row.add_child(apply)
@@ -44,7 +44,7 @@ func _ready() -> void:
 
 	v.add_child(_section("GAMES"))
 	var folder := Button.new()
-	folder.theme_type_variation = "FlatButton"
+	folder.theme_type_variation = "CompactButton"
 	folder.text = "OPEN GAMES FOLDER"
 	folder.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	folder.pressed.connect(func():
@@ -59,7 +59,7 @@ func _ready() -> void:
 	var group := ButtonGroup.new()
 	for option in [["large", "LARGE"], ["small", "SMALL"]]:
 		var b := Button.new()
-		b.theme_type_variation = "FlatButton"
+		b.theme_type_variation = "CompactButton"
 		b.text = option[1]
 		b.toggle_mode = true
 		b.button_group = group
@@ -85,10 +85,10 @@ func _ready() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ver.add_child(spacer)
-	_check_btn.theme_type_variation = "FlatButton"
+	_check_btn.theme_type_variation = "CompactButton"
 	ver.add_child(_check_btn)
 	var releases := Button.new()
-	releases.theme_type_variation = "FlatButton"
+	releases.theme_type_variation = "CompactButton"
 	releases.text = "ALL VERSIONS"
 	releases.pressed.connect(func(): OS.shell_open(AppConfig.RELEASES_PAGE))
 	ver.add_child(releases)

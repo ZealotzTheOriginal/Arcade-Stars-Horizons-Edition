@@ -12,6 +12,9 @@ const WEIGHT_SEMIBOLD := 600
 const WEIGHT_BOLD := 700
 const WEIGHT_HEAVY := 800
 
+## Radio de todos los botones del launcher (casi cuadrados).
+const BUTTON_RADIUS := 3
+
 static var _cached: Theme
 static var _fonts: Dictionary = {}
 
@@ -65,14 +68,11 @@ static func get_theme() -> Theme:
 	card.set_content_margin_all(12)
 	t.set_stylebox("panel", "CardPanel", card)
 
-	# Botones
+	# Botones: planos en todo el launcher (sin borde, esquinas casi rectas). Solo el estado
+	# seleccionado/pulsado ("pressed", también el activo de un toggle) lleva un borde de acento.
+	_button_type(t, "Button", 14, 18)
+	_button_type(t, "CompactButton", 13, 12)
 	t.set_font("font", "Button", font(FONT_BODY, WEIGHT_SEMIBOLD, 1))
-	t.set_font_size("font_size", "Button", 14)
-	t.set_stylebox("normal", "Button", box(Palette.fade(Palette.BG_400, 0.9), Palette.fade(Palette.FG_100, 0.12), 12, 1, 18))
-	t.set_stylebox("hover", "Button", box(Palette.BG_400.lightened(0.1), Palette.fade(Palette.ACC_BLUE, 0.6), 12, 1, 18))
-	t.set_stylebox("pressed", "Button", box(Palette.BG_300, Palette.ACC_BLUE, 12, 1, 18))
-	t.set_stylebox("disabled", "Button", box(Palette.fade(Palette.BG_300, 0.5), Palette.fade(Palette.FG_100, 0.04), 12, 1, 18))
-	t.set_stylebox("focus", "Button", StyleBoxEmpty.new())
 	t.set_color("font_color", "Button", Palette.FG_100)
 	t.set_color("font_hover_color", "Button", Palette.FG_100)
 	t.set_color("font_disabled_color", "Button", Palette.fade(Palette.FG_200, 0.35))
@@ -80,41 +80,22 @@ static func get_theme() -> Theme:
 	t.add_type("PrimaryButton")
 	t.set_type_variation("PrimaryButton", "Button")
 	t.set_font("font", "PrimaryButton", font(FONT_BODY, WEIGHT_BOLD, 1))
-	t.set_stylebox("normal", "PrimaryButton", box(Palette.ACC_GREEN, Palette.ACC_GREEN, 12, 1, 20))
-	t.set_stylebox("hover", "PrimaryButton", box(Palette.ACC_GREEN.lightened(0.18), Palette.FG_100, 12, 1, 20))
-	t.set_stylebox("pressed", "PrimaryButton", box(Palette.ACC_GREEN.darkened(0.15), Palette.ACC_GREEN, 12, 1, 20))
-	t.set_stylebox("disabled", "PrimaryButton", box(Palette.fade(Palette.ACC_GREEN, 0.25), Palette.fade(Palette.ACC_GREEN, 0.25), 12, 1, 20))
+	t.set_stylebox("normal", "PrimaryButton", box(Palette.ACC_GREEN, Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
+	t.set_stylebox("hover", "PrimaryButton", box(Palette.ACC_GREEN.lightened(0.18), Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
+	t.set_stylebox("pressed", "PrimaryButton", box(Palette.ACC_GREEN.darkened(0.15), Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
+	t.set_stylebox("disabled", "PrimaryButton", box(Palette.fade(Palette.ACC_GREEN, 0.25), Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		t.set_color(c, "PrimaryButton", Palette.VOID)
 	t.set_color("font_disabled_color", "PrimaryButton", Palette.fade(Palette.VOID, 0.5))
-
-	t.add_type("CompactButton")
-	t.set_type_variation("CompactButton", "Button")
-	t.set_font_size("font_size", "CompactButton", 13)
-	t.set_stylebox("normal", "CompactButton", box(Palette.fade(Palette.BG_400, 0.9), Palette.fade(Palette.FG_100, 0.12), 10, 1, 12))
-	t.set_stylebox("hover", "CompactButton", box(Palette.BG_400.lightened(0.1), Palette.fade(Palette.ACC_BLUE, 0.6), 10, 1, 12))
-	t.set_stylebox("pressed", "CompactButton", box(Palette.BG_300, Palette.ACC_BLUE, 10, 1, 12))
-	t.set_stylebox("disabled", "CompactButton", box(Palette.fade(Palette.BG_300, 0.5), Palette.fade(Palette.FG_100, 0.04), 10, 1, 12))
-
-	# Botones planos (ajustes): sin borde y casi cuadrados; solo el seleccionado (toggle) lleva borde.
-	t.add_type("FlatButton")
-	t.set_type_variation("FlatButton", "Button")
-	t.set_font_size("font_size", "FlatButton", 13)
-	t.set_stylebox("normal", "FlatButton", box(Palette.fade(Palette.BG_400, 0.9), Color.TRANSPARENT, 3, 0, 12))
-	t.set_stylebox("hover", "FlatButton", box(Palette.BG_400.lightened(0.1), Color.TRANSPARENT, 3, 0, 12))
-	var selected := box(Palette.BG_300, Palette.ACC_BLUE, 3, 1, 12)    # "pressed" = también el estado activo de un toggle
-	t.set_stylebox("pressed", "FlatButton", selected)
-	t.set_stylebox("hover_pressed", "FlatButton", selected)
-	t.set_stylebox("disabled", "FlatButton", box(Palette.fade(Palette.BG_300, 0.5), Color.TRANSPARENT, 3, 0, 12))
 
 	# Botón especial (AccentButton): fondo VOID y texto blanco; el borde animado lo dibuja su shader.
 	t.add_type("AccentButton")
 	t.set_type_variation("AccentButton", "Button")
 	t.set_font("font", "AccentButton", font(FONT_BODY, WEIGHT_BOLD, 1))
-	t.set_stylebox("normal", "AccentButton", box(Palette.VOID, Color.TRANSPARENT, 6, 0, 20))
-	t.set_stylebox("hover", "AccentButton", box(Palette.VOID.lightened(0.04), Color.TRANSPARENT, 6, 0, 20))
-	t.set_stylebox("pressed", "AccentButton", box(Palette.BLACK, Color.TRANSPARENT, 6, 0, 20))
-	t.set_stylebox("disabled", "AccentButton", box(Palette.fade(Palette.VOID, 0.7), Color.TRANSPARENT, 6, 0, 20))
+	t.set_stylebox("normal", "AccentButton", box(Palette.VOID, Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
+	t.set_stylebox("hover", "AccentButton", box(Palette.VOID.lightened(0.04), Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
+	t.set_stylebox("pressed", "AccentButton", box(Palette.BLACK, Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
+	t.set_stylebox("disabled", "AccentButton", box(Palette.fade(Palette.VOID, 0.7), Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		t.set_color(c, "AccentButton", Palette.FG_100)
 	t.set_color("font_disabled_color", "AccentButton", Palette.fade(Palette.FG_100, 0.35))
@@ -123,9 +104,9 @@ static func get_theme() -> Theme:
 	t.set_type_variation("DangerButton", "Button")
 	t.set_font("font", "DangerButton", font(FONT_BODY, WEIGHT_BOLD, 1))
 	var danger := Color("#E5484D")
-	t.set_stylebox("normal", "DangerButton", box(danger, danger, 12, 1, 20))
-	t.set_stylebox("hover", "DangerButton", box(danger.lightened(0.15), Palette.FG_100, 12, 1, 20))
-	t.set_stylebox("pressed", "DangerButton", box(danger.darkened(0.15), danger, 12, 1, 20))
+	t.set_stylebox("normal", "DangerButton", box(danger, Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
+	t.set_stylebox("hover", "DangerButton", box(danger.lightened(0.15), Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
+	t.set_stylebox("pressed", "DangerButton", box(danger.darkened(0.15), Color.TRANSPARENT, BUTTON_RADIUS, 0, 20))
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		t.set_color(c, "DangerButton", Palette.FG_100)
 
@@ -167,6 +148,7 @@ static func get_theme() -> Theme:
 	t.set_stylebox("normal", "OptionButton", t.get_stylebox("normal", "Button"))
 	t.set_stylebox("hover", "OptionButton", t.get_stylebox("hover", "Button"))
 	t.set_stylebox("pressed", "OptionButton", t.get_stylebox("pressed", "Button"))
+	t.set_stylebox("disabled", "OptionButton", t.get_stylebox("disabled", "Button"))
 	t.set_font("font", "PopupMenu", font(FONT_BODY, WEIGHT_REGULAR, 1))
 	t.set_stylebox("panel", "PopupMenu", box(Palette.BG_200, Palette.fade(Palette.FG_100, 0.12), 10, 1, 6))
 	t.set_stylebox("hover", "PopupMenu", box(Palette.BG_400, Color.TRANSPARENT, 8, 0, 6))
@@ -191,6 +173,21 @@ static func crisp_logo(px: int) -> ImageTexture:
 	img.fix_alpha_edges()    # los píxeles transparentes toman el color vecino: sin halo al filtrar
 	img.resize(maxi(px, 1), maxi(px, 1), Image.INTERPOLATE_LANCZOS)
 	return ImageTexture.create_from_image(img)
+
+## Estilos de un botón plano: relleno sin borde; el estado "pressed" (y el activo de un toggle)
+## se marca con un borde de acento.
+static func _button_type(t: Theme, type: String, font_size: int, pad: int) -> void:
+	if type != "Button":
+		t.add_type(type)
+		t.set_type_variation(type, "Button")
+	t.set_font_size("font_size", type, font_size)
+	t.set_stylebox("normal", type, box(Palette.fade(Palette.BG_400, 0.9), Color.TRANSPARENT, BUTTON_RADIUS, 0, pad))
+	t.set_stylebox("hover", type, box(Palette.BG_400.lightened(0.1), Color.TRANSPARENT, BUTTON_RADIUS, 0, pad))
+	var selected := box(Palette.BG_300, Palette.ACC_BLUE, BUTTON_RADIUS, 1, pad)
+	t.set_stylebox("pressed", type, selected)
+	t.set_stylebox("hover_pressed", type, selected)
+	t.set_stylebox("disabled", type, box(Palette.fade(Palette.BG_300, 0.5), Color.TRANSPARENT, BUTTON_RADIUS, 0, pad))
+	t.set_stylebox("focus", type, StyleBoxEmpty.new())
 
 ## Caja con esquinas antialiasadas (sin borde, o con borde de 1 px en botones/campos).
 static func box(bg: Color, border: Color, radius: int, border_w: int = 0, pad: int = 0) -> StyleBoxFlat:

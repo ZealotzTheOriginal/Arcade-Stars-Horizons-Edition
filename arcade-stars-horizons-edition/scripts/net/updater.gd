@@ -215,7 +215,11 @@ func _apply_and_restart() -> void:
 	OS.create_process("cmd.exe", ["/c", _write_apply_script(OS.get_executable_path())])
 	get_tree().quit()
 
-## Reinicia el launcher (para aplicar juegos actualizados).
+## Reinicia el launcher (para aplicar juegos actualizados), sin la animación de inicio y
+## conservando los argumentos propios (p. ej. --profile).
 func restart() -> void:
-	OS.create_process(OS.get_executable_path(), OS.get_cmdline_args())
+	var user_args := OS.get_cmdline_user_args()
+	if not user_args.has(AppConfig.NO_SPLASH_ARG):
+		user_args.append(AppConfig.NO_SPLASH_ARG)
+	OS.create_process(OS.get_executable_path(), OS.get_cmdline_args() + PackedStringArray(["--"]) + user_args)
 	get_tree().quit()

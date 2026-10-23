@@ -3,7 +3,6 @@ extends PanelContainer
 ## Biblioteca: cada juego del catálogo con su estado (instalado, actualización, no instalado)
 ## y botones para descargarlo o actualizarlo desde GitHub Releases, o desinstalarlo.
 
-const WARN_COLOR := Color("#FFD166")
 const ERROR_COLOR := Color("#FF7A8A")
 
 var _list: VBoxContainer
@@ -29,9 +28,7 @@ func _ready() -> void:
 	_message = CapsLabel.new()
 	_message.theme_type_variation = "MutedLabel"
 	top.add_child(_message)
-	_restart_btn = Button.new()
-	_restart_btn.theme_type_variation = "PrimaryButton"
-	_restart_btn.text = "RESTART TO APPLY"
+	_restart_btn = AccentButton.new("RESTART TO APPLY")
 	_restart_btn.pressed.connect(func(): Updater.restart())
 	top.add_child(_restart_btn)
 
@@ -102,7 +99,7 @@ func _game_card(id: String) -> Control:
 		h.add_child(bar)
 		return card
 	if state == "pending":
-		h.add_child(_state_label("Restart to apply", WARN_COLOR))
+		h.add_child(_state_label("Restart required", Palette.ACC_PINK))
 		return card
 	if state == "installed":
 		h.add_child(_state_label("Installed", Palette.ACC_GREEN))

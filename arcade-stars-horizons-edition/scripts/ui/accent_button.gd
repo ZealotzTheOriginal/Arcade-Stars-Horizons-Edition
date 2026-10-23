@@ -5,7 +5,6 @@ extends Button
 ## Componente autónomo: basta con instanciarlo; quitarlo no afecta al resto del tema.
 
 const SHADER := preload("res://assets/accent_border.gdshader")
-const RADIUS := 6
 const DISABLED_FADE := 0.3
 
 var _mat: ShaderMaterial
@@ -19,7 +18,7 @@ func _init(label: String = "") -> void:
 	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_mat = ShaderMaterial.new()
 	_mat.shader = SHADER
-	_mat.set_shader_parameter("radius_px", float(RADIUS))
+	_mat.set_shader_parameter("radius_px", float(AppTheme.BUTTON_RADIUS))
 	_mat.set_shader_parameter("color_a", Palette.ACC_PINK)
 	_mat.set_shader_parameter("color_b", Palette.ACC_GREEN)
 	_mat.set_shader_parameter("color_c", Palette.ACC_BLUE)

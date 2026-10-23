@@ -129,10 +129,10 @@ launcher se actualiza solo y descarga los juegos desde la Biblioteca. Exportar a
 
 ## Iconos
 
-`assets/icons/logo.png` (512×512, con su fondo circular) es el logo original: lo usan la barra de título y el splash
-(reducido en tiempo de ejecución al tamaño físico exacto, para que se vea nítido). `python tools/make_icons.py` genera a
-partir de él `icon.png` (icono de ventana) e `icon.ico` (16–256 px, icono del `.exe`, referenciado en el preset de
-exportación). Windows necesita el ICO multi-tamaño; el PNG cuadrado sirve en ejecución.
+`assets/icons/logo.png` es el logo de la marca (símbolo blanco): lo usan la barra de título y el splash, reducido en
+tiempo de ejecución al tamaño físico exacto para que se vea nítido. `assets/icons/icon_source.png` (512×512, con su
+fondo circular) es SOLO el icono del ejecutable: `python tools/make_icons.py` genera a partir de él `icon.png` (icono
+de ventana) e `icon.ico` (16–256 px, icono del `.exe`, referenciado en el preset de exportación).
 
 ## Despliegue del servidor
 

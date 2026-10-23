@@ -39,6 +39,12 @@ static func server_url() -> String:
 		return from_env
 	return SERVER_URL if SERVER_URL != "" else LOCAL_SERVER_URL
 
+## Sin animación de inicio: al reiniciar el launcher (`-- --no-splash`) o con ASH_NO_SPLASH=1.
+const NO_SPLASH_ARG := "--no-splash"
+
+static func skip_splash() -> bool:
+	return OS.get_environment("ASH_NO_SPLASH") == "1" or OS.get_cmdline_user_args().has(NO_SPLASH_ARG)
+
 ## Perfil de sesión: permite varias instancias con usuarios distintos en un mismo PC.
 ## Se elige con `-- --profile=2` o con la variable ASH_PROFILE.
 static func profile() -> String:

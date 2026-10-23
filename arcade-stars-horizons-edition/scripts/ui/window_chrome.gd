@@ -150,12 +150,17 @@ func end_splash() -> void:
 ## Entra al launcher: carga el hub invisible y lo muestra con un fundido en el sitio (la ventana ya
 ## tiene su tamaño). Corre aquí (autoload) porque el splash se libera al cambiar de escena.
 func enter_launcher(hub: PackedScene) -> void:
+	var no_splash := not _splash
+	if no_splash:
+		# Sin splash (reinicio o ASH_NO_SPLASH): barra y borde aparecen con el hub, no antes.
+		_bar.modulate.a = 0.0
+		_frame_mat.set_shader_parameter("border_strength", 0.0)
 	Engine.set_meta("fade_in_hub", true)
 	get_tree().change_scene_to_packed(hub)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	if not _splash:
-		_place_window(_launcher_size())    # sin splash (ASH_NO_SPLASH): la ventana aún es mínima
+	if no_splash:
+		_place_window(_launcher_size())    # la ventana aún es mínima
 	end_splash()
 	await get_tree().process_frame
 	var scene := get_tree().current_scene

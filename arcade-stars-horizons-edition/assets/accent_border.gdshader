@@ -5,8 +5,8 @@ shader_type canvas_item;
 // aclaran un poco. Se dibuja encima del botón y fuera del anillo es totalmente transparente.
 
 uniform vec2 size_px = vec2(160.0, 40.0);      // tamaño del botón (px lógicos)
-uniform float radius_px = 6.0;
-uniform float border_px = 1.5;
+uniform float radius_px = 3.0;
+uniform float border_px = 1.0;                 // grosor en píxeles de PANTALLA (no depende del DPI)
 uniform vec4 color_a : source_color = vec4(0.925, 0.698, 1.0, 1.0);   // ACC_PINK
 uniform vec4 color_b : source_color = vec4(0.525, 0.969, 0.188, 1.0); // ACC_GREEN
 uniform vec4 color_c : source_color = vec4(0.651, 0.784, 1.0, 1.0);   // ACC_BLUE
@@ -37,8 +37,13 @@ vec3 accent_cycle(float t) {
 void fragment() {
 	vec2 p = UV * size_px;
 	float d = sd_round_box(p - size_px * 0.5, size_px * 0.5, radius_px);
-	float aa = max(fwidth(d), 0.0001);
-	float ring = smoothstep(-border_px - aa, -border_px + aa, d) * (1.0 - smoothstep(-aa, aa, d));
+	// Cobertura exacta del píxel sobre la franja [-w, 0] junto al contorno (px = tamaño de un píxel
+	// de pantalla en unidades lógicas): un anillo de border_px píxeles reales, nítido con cualquier escala.
+	float px = max(fwidth(d), 0.0001);
+	float w = border_px * px;
+	float lo = max(d - px * 0.5, -w);
+	float hi = min(d + px * 0.5, 0.0);
+	float ring = clamp((hi - lo) / px, 0.0, 1.0);
 
 	vec2 g = p / cell_px;
 	vec2 cell = floor(g);
