@@ -1,6 +1,7 @@
 shader_type canvas_item;
 // Marcador de portada: fondo liso con estrellas que giran en espiral alrededor del centro. Las
-// estrellas viven en coordenadas polares "retorcidas" (ángulo + log del radio), así cada fila de celdas forma un brazo de espiral; al avanzar el tiempo giran y se acercan lentamente al centro.
+// estrellas viven en coordenadas polares "retorcidas" (ángulo + log del radio), así cada fila de celdas
+// forma un brazo de espiral; al avanzar el tiempo giran y se acercan lentamente al centro.
 // Ligero a propósito (3 capas, una celda por capa): debe ir bien en gráficas integradas antiguas.
 
 uniform vec2 size_px = vec2(210.0, 210.0);    // tamaño de la tarjeta (px lógicos)
