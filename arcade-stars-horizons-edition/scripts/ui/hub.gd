@@ -77,7 +77,6 @@ func _build() -> void:
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 16)
 	margin.add_child(root)
-	root.add_child(UpdateBanner.new())
 	root.add_child(_build_nav())
 
 	var body := HBoxContainer.new()
@@ -97,6 +96,7 @@ func _build() -> void:
 	for v in [_lobby_view, _room_view, _library_view, _settings_view]:
 		v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		center.add_child(v)
+	add_child(UpdatePopup.new())    # flotante, encima del contenido
 
 func _build_nav() -> Control:
 	var h := HBoxContainer.new()

@@ -8,6 +8,7 @@ var _name_input: LineEdit
 var _name_msg: Label
 var _update_status: Label
 var _check_btn: Button
+var _update_btn: AccentButton
 
 func _ready() -> void:
 	theme_type_variation = "GlassPanel"
@@ -87,6 +88,11 @@ func _ready() -> void:
 	ver.add_child(spacer)
 	_check_btn.theme_type_variation = "CompactButton"
 	ver.add_child(_check_btn)
+	_update_btn = AccentButton.new("UPDATE")
+	_update_btn.pressed.connect(func():
+		Updater.start_launcher_update()
+		_refresh_update())
+	ver.add_child(_update_btn)
 	var releases := Button.new()
 	releases.theme_type_variation = "CompactButton"
 	releases.text = "ALL VERSIONS"
@@ -94,6 +100,9 @@ func _ready() -> void:
 	ver.add_child(releases)
 
 	Updater.manifest_changed.connect(refresh)
+	Updater.download_finished.connect(func(key, _ok, _m):
+		if key == "launcher":
+			_refresh_update())
 	Net.connected_to_room.connect(refresh)
 	Net.left_room.connect(func(_r): refresh())
 	Backend.status_changed.connect(refresh)
@@ -107,8 +116,18 @@ func _section(text: String) -> Label:
 
 func refresh() -> void:
 	_name_input.text = Net.local_name
-	_check_btn.disabled = Updater.checking
-	if Updater.checking:
+	_refresh_update()
+
+## Estado del launcher y botón UPDATE (DOWNLOAD en Linux) si hay versión nueva.
+func _refresh_update() -> void:
+	var available := not Updater.launcher_update().is_empty()
+	var busy := Updater.is_busy("launcher")
+	_check_btn.disabled = Updater.checking or busy
+	_update_btn.text = "UPDATE" if Updater.can_self_update() else "DOWNLOAD"
+	_update_btn.visible = available and not busy
+	if busy:
+		_update_status.text = "Downloading…"
+	elif Updater.checking:
 		_update_status.text = "Checking…"
 	elif Updater.forced:
 		_update_status.text = "Update required"

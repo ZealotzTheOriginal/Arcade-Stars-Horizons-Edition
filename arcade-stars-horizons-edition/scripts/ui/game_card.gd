@@ -181,6 +181,9 @@ func _menu_button() -> Button:
 	_menu.hide_on_item_selection = false    # UNINSTALL pide confirmación sin cerrar el menú
 	_menu.id_pressed.connect(_on_menu_action)
 	_menu.popup_hide.connect(func(): _confirming = false)
+	visibility_changed.connect(func():    # al cambiar de pestaña el menú no se queda abierto
+		if not is_visible_in_tree():
+			_menu.hide())
 	b.add_child(_menu)
 	b.pressed.connect(func():
 		_fill_menu()

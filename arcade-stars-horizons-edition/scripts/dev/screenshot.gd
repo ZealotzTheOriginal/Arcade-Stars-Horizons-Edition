@@ -41,7 +41,7 @@ func _process(_d: float) -> bool:
 		lobby.rooms = [{"id": "AB3X9", "name": "Orion Nebula", "game_id": "minesweeper", "players": 1, "max": 4, "in_game": false, "host_name": "Vega"}]
 		lobby.users_changed.emit()
 		lobby.rooms_changed.emit()
-		updater.manifest = {"launcher": {"version": "1.2.0", "url": "x", "sha256": "0".repeat(64)}, "games": {"minesweeper": {"version": "1.1.0", "url": "x", "sha256": "0".repeat(64)}}}
+		updater.manifest = {"launcher": {"version": "9.9.9", "url": "x", "sha256": "0".repeat(64)}, "games": {"minesweeper": {"version": "1.1.0", "url": "x", "sha256": "0".repeat(64)}}}
 		updater.manifest_changed.emit()
 	if frame == 40:
 		current_scene.get_child(0)._next_shoot = 0.0     # fuerza una estrella fugaz

@@ -156,6 +156,13 @@ func download_game(game_id: String) -> void:
 	download_finished.emit(game_id, err == "", err)
 	manifest_changed.emit()
 
+## Acción del botón UPDATE (aviso y Settings): autoactualizado en Windows; en Linux abre Releases.
+func start_launcher_update() -> void:
+	if can_self_update():
+		update_launcher()
+	else:
+		OS.shell_open(AppConfig.RELEASES_PAGE)
+
 func update_launcher() -> void:
 	var entry := launcher_update()
 	if entry.is_empty() or is_busy("launcher") or not can_self_update():
