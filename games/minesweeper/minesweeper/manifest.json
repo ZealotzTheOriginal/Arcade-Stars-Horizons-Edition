@@ -1,7 +1,7 @@
 {
 	"id": "minesweeper",
 	"name": "Minesweeper",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"api_version": 1,
 	"scene": "res://minesweeper/minesweeper.tscn",
 	"min_players": 1,

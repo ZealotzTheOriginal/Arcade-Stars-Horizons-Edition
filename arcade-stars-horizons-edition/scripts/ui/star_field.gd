@@ -62,10 +62,25 @@ static func _noise_texture() -> NoiseTexture2D:
 func _scale() -> float:
 	return get_window().content_scale_factor
 
+## Opacidad efectiva en el árbol (producto de los modulate de los ancestros). Se pasa al shader porque
+## un shader que fija COLOR no hereda el modulate en Godot.
+func _tree_alpha() -> float:
+	var a := 1.0
+	var n: Node = self
+	while n:
+		if n is CanvasItem:
+			a *= (n as CanvasItem).modulate.a * (n as CanvasItem).self_modulate.a
+		n = n.get_parent()
+	return a
+
 func _process(delta: float) -> void:
-	_t += delta
+	var alpha := _tree_alpha()
+	if alpha > 0.0:
+		_t += delta    # el reloj (destellos de nebulosa) no avanza mientras el fondo es invisible
 	var win_px := Vector2(get_window().size)
 	_mat.set_shader_parameter("window_px", win_px)
+	_mat.set_shader_parameter("fade", alpha)
+	_mat.set_shader_parameter("time_s", _t)
 	if _t >= _next_shoot:
 		_spawn_shooting_star(win_px)
 	_shooting = _shooting.filter(func(s): return _t - s["start_t"] < SHOOT_DURATION)

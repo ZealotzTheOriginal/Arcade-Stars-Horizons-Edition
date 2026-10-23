@@ -3,6 +3,7 @@ extends SceneTree
 ##   godot --path . -s res://scripts/dev/screenshot.gd
 
 var frame := 0
+var _saved_cfg := FileAccess.get_file_as_string("user://ui.cfg")    # se restaura al salir (no tocar preferencias reales)
 var _star_shot := false
 
 func _initialize() -> void:
@@ -76,6 +77,11 @@ func _process(_d: float) -> bool:
 		_shot("exit_confirm")
 		quit()
 	return false
+
+func _finalize() -> void:
+	var f := FileAccess.open("user://ui.cfg", FileAccess.WRITE)
+	f.store_string(_saved_cfg)
+	f.close()
 
 func _shot(n: String) -> void:
 	root.get_texture().get_image().save_png("user://shot_%s.png" % n)

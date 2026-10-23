@@ -10,14 +10,11 @@ const LOGO := preload("res://assets/icons/logo.png")
 const LOGO_IN := 1.6
 const TITLE_START := 0.6
 const TITLE_IN := 1.4
-const SUBTITLE_START := 1.2
-const SUBTITLE_IN := 1.2
 const HOLD_UNTIL := 3.4
 const FADE_OUT := 0.7
 
 const LOGO_SIZE := 240.0
 const TITLE_SIZE := 56
-const SUBTITLE_SIZE := 19
 const SPARK_COUNT := 40
 const SPARK_SPREAD := 330.0    # radio del óvalo de chispas (px lógicos); el tamaño de cada chispa no cambia
 
@@ -26,7 +23,6 @@ var _leaving := false
 var _leave_t := 0.0
 var _logo: TextureRect
 var _title: CapsLabel
-var _subtitle: CapsLabel
 var _title_font: FontVariation
 var _sparks: Control
 var _spark_data: Array[Dictionary] = []
@@ -64,20 +60,9 @@ func _ready() -> void:
 	_title.add_theme_font_override("font", _title_font)
 	_title.add_theme_font_size_override("font_size", TITLE_SIZE)
 	_title.add_theme_color_override("font_color", Palette.FG_100)
-	_title.add_theme_color_override("font_outline_color", Palette.fade(Palette.VOID, 0.45))
-	_title.add_theme_constant_override("outline_size", 6)
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_title)
-	_subtitle = CapsLabel.new("Horizons Edition")
-	_subtitle.add_theme_font_override("font", AppTheme.font(AppTheme.FONT_BODY, AppTheme.WEIGHT_SEMIBOLD, 9))
-	_subtitle.add_theme_font_size_override("font_size", SUBTITLE_SIZE)
-	_subtitle.add_theme_color_override("font_color", Palette.ACC_GREEN)
-	_subtitle.add_theme_color_override("font_outline_color", Palette.fade(Palette.VOID, 0.55))
-	_subtitle.add_theme_constant_override("outline_size", 5)
-	_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_subtitle.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_subtitle)
 	_layout(0.0)
 
 ## Curva suave (sin tirones al empezar ni al acabar).
@@ -103,7 +88,7 @@ func _process(delta: float) -> void:
 	_sparks.queue_redraw()
 
 func _center() -> Vector2:
-	return size / 2.0 + Vector2(0, -60)
+	return size / 2.0 + Vector2(0, -45)
 
 func _layout(t: float) -> void:
 	var c := _center()
@@ -118,10 +103,6 @@ func _layout(t: float) -> void:
 	_title.size = Vector2(size.x, TITLE_SIZE + 20)
 	_title.position = Vector2(0, c.y + 150 + float_y * 0.5 + (1.0 - title_in) * 10.0)
 	_title.modulate.a = title_in
-	var sub_in := _smooth((t - SUBTITLE_START) / SUBTITLE_IN)
-	_subtitle.size = Vector2(size.x, SUBTITLE_SIZE + 12)
-	_subtitle.position = Vector2(0, c.y + 228 + float_y * 0.5)
-	_subtitle.modulate.a = sub_in
 
 func _draw_sparks() -> void:
 	var c := _center()

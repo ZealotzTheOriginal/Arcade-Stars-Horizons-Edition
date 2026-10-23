@@ -1,10 +1,10 @@
 extends SceneTree
 ## Prueba la ventana de tamaño fijo (grande/reducido, centrado, no redimensionable). Solo desarrollo.
-## Restaura la preferencia de tamaño del usuario al terminar.
+## Guarda y restaura user://ui.cfg para no alterar las preferencias reales del usuario.
 var frame := 0
 var failures := 0
 var chrome
-var saved_pref := "large"
+var saved_cfg := ""
 
 func _check(name: String, ok: bool, extra: String = "") -> void:
 	print("%s  %s %s" % ["PASS" if ok else "FAIL", name, extra])
@@ -24,7 +24,7 @@ func _process(_d: float) -> bool:
 	chrome = root.get_node("WindowChrome")
 	match frame:
 		2:
-			saved_pref = chrome.window_size_name()
+			saved_cfg = FileAccess.get_file_as_string("user://ui.cfg")
 			chrome.set_window_size("large")
 		12:
 			_check("large size", DisplayServer.window_get_size() == _expected("large"), str(DisplayServer.window_get_size()))
@@ -38,7 +38,9 @@ func _process(_d: float) -> bool:
 			chrome.set_window_size("large")
 		32:
 			_check("back to large", DisplayServer.window_get_size() == _expected("large"))
-			chrome.set_window_size(saved_pref)
+			var f := FileAccess.open("user://ui.cfg", FileAccess.WRITE)
+			f.store_string(saved_cfg)
+			f.close()
 		36:
 			print("RESULT: %s" % ("ALL PASSED" if failures == 0 else "%d FAILED" % failures))
 			quit(1 if failures else 0)

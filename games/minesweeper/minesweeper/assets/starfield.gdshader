@@ -3,6 +3,11 @@ shader_type canvas_item;
 // destellan y viñeta suave. Va anclado a la ventana (el launcher tiene tamaño fijo).
 
 uniform vec2 window_px = vec2(1280.0, 720.0); // tamaño de la ventana (px físicos)
+// Opacidad del fondo. Un shader que fija COLOR NO hereda el modulate de sus padres en Godot, así que
+// el script le pasa aquí la opacidad del árbol (p. ej. el fundido de entrada del hub).
+uniform float fade = 1.0;
+// Segundos desde que el fondo apareció: las nebulosas empiezan a destellar solo con el launcher visible.
+uniform float time_s = 0.0;
 uniform sampler2D noise_tex : repeat_enable, filter_linear;
 
 uniform vec4 void_color : source_color = vec4(0.0118, 0.0118, 0.0549, 1.0);
@@ -35,7 +40,7 @@ vec2 hash22(vec2 p) {
 // Envolvente de un destello: sube (fade_in), se mantiene (hold) y baja (fade_out) dentro de un ciclo.
 // `cycle` devuelve el número de ciclo (sirve para cambiar de lugar en cada destello).
 float flash(float period, float phase_s, float fade_in, float hold, float fade_out, out float cycle) {
-	float t = TIME + phase_s;
+	float t = max(time_s - phase_s, 0.0);    // cada capa arranca tras su retardo
 	cycle = floor(t / period);
 	float a = t - cycle * period;
 	return smoothstep(0.0, fade_in, a) * (1.0 - smoothstep(fade_in + hold, fade_in + hold + fade_out, a));
@@ -64,7 +69,6 @@ float stars(vec2 p) {
 }
 
 void fragment() {
-	float inherited_alpha = COLOR.a;    // modulate heredado (p. ej. el fundido de entrada del hub)
 	vec2 p = UV * window_px;            // píxeles físicos de la ventana
 	vec3 col = void_color.rgb;
 
@@ -72,9 +76,9 @@ void fragment() {
 	// aparece en otro lugar del campo. El ruido fractal está precalculado en textura (barato).
 	vec2 q = p / nebula_scale;
 	float c1; float c2; float c3;
-	float f1 = flash(17.0, 2.0, 1.4, 1.6, 5.0, c1);
-	float f2 = flash(23.0, 9.0, 1.4, 1.4, 5.5, c2);
-	float f3 = flash(29.0, 15.0, 1.6, 1.2, 5.0, c3);
+	float f1 = flash(17.0, 2.5, 1.4, 1.6, 5.0, c1);
+	float f2 = flash(23.0, 8.0, 1.4, 1.4, 5.5, c2);
+	float f3 = flash(29.0, 14.0, 1.6, 1.2, 5.0, c3);
 	float n1 = texture(noise_tex, q + hash22(vec2(c1, 1.0)) * 7.0).r;
 	float n2 = texture(noise_tex, q * 0.75 + hash22(vec2(c2, 2.0)) * 7.0).r;
 	float n3 = texture(noise_tex, q * 1.35 + hash22(vec2(c3, 3.0)) * 7.0).r;
@@ -88,7 +92,7 @@ void fragment() {
 	float v = smoothstep(1.25, 0.45, length(UV - 0.5) * 1.35);
 	col *= mix(0.8, 1.0, v);
 	col += (hash21(FRAGCOORD.xy) - 0.5) / 255.0;
-	// Respetar el modulate: con alfa fija 1.0 el fondo aparecía opaco de golpe durante el fundido
-	// de entrada (el "cuadrado negro" al abrir el launcher).
-	COLOR = vec4(col, inherited_alpha);
+	// Con alfa fija 1.0 el fondo aparecía opaco de golpe durante el fundido de entrada del hub
+	// (el "cuadrado oscuro" al abrir el launcher): la opacidad llega en `fade`.
+	COLOR = vec4(col, fade);
 }
