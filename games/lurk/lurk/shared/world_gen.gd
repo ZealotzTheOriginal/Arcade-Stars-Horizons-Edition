@@ -5,8 +5,9 @@ extends RefCounted
 
 const Config = preload("config.gd")
 const Grid = preload("grid.gd")
+const Shapes = preload("shapes.gd")
 
-## Asteroides: Array de { id, pos, vel, r }.
+## Asteroides: Array de { id, pos, vel, points, r, gen_r, rot, spin, ver }.
 static func asteroids(rng: RandomNumberGenerator, size: float, first_id: int = 1, region := Rect2()) -> Array:
 	var area := region if region.has_area() else Rect2(0, 0, size, size)
 	var target := area.get_area() * Config.ASTEROID_COVERAGE
@@ -30,7 +31,11 @@ static func asteroids(rng: RandomNumberGenerator, size: float, first_id: int = 1
 		if not ok:
 			continue
 		var speed := rng.randf_range(Config.ASTEROID_SPEED_MIN, Config.ASTEROID_SPEED_MAX)
-		out.append({"id": first_id + out.size(), "pos": pos, "vel": Vector2.from_angle(rng.randf() * TAU) * speed, "r": r})
+		var id := first_id + out.size()
+		var shape := Shapes.generate(id, r)
+		# r = radio envolvente del contorno (rejilla y choques entre asteroides); ver = 0 → forma generada desde el id
+		out.append({"id": id, "pos": pos, "vel": Vector2.from_angle(rng.randf() * TAU) * speed, "points": shape["points"],
+			"r": Shapes.bounding_radius(shape["points"]), "gen_r": r, "rot": shape["rot"], "spin": shape["spin"], "ver": 0})
 		grid.insert(pos, out.size() - 1)
 		covered += PI * r * r
 	return out

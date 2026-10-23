@@ -4,21 +4,29 @@ extends Node2D
 ##   (shared/) y, al llegar cada estado, se corrige rehaciendo las entradas aún no confirmadas.
 ## - Balas propias: también se predicen (salen al instante) y pasan a la del servidor cuando llega.
 ## - Naves ajenas: INTERPOLACIÓN entre los dos últimos estados, con un pequeño retardo.
-## - Asteroides, gemas y balas ajenas: se extrapolan con su velocidad desde el último estado.
+## - Asteroides, gemas, power-ups, misiles y balas ajenas: se extrapolan desde el último estado.
 ## Contrato con el hub (API 2): `start(ctx)`; ctx da jugadores, envío de entradas y pantalla completa.
 
 const Config = preload("res://lurk/shared/config.gd")
 const Physics = preload("res://lurk/shared/physics.gd")
+const Shapes = preload("res://lurk/shared/shapes.gd")
+const PU = preload("res://lurk/shared/powerups.gd")
 const AsteroidView = preload("res://lurk/render/asteroid_view.gd")
 const ShipView = preload("res://lurk/render/ship_view.gd")
 const GemView = preload("res://lurk/render/gem_view.gd")
+const PickupView = preload("res://lurk/render/pickup_view.gd")
+const CrateView = preload("res://lurk/render/crate_view.gd")
+const MissileView = preload("res://lurk/render/missile_view.gd")
 const BulletLayer = preload("res://lurk/render/bullet_layer.gd")
 const Fx = preload("res://lurk/render/fx.gd")
 const Neon = preload("res://lurk/render/neon.gd")
+const Art = preload("res://lurk/render/powerup_art.gd")
 const PauseMenu = preload("res://lurk/ui/pause_menu.gd")
 const Hud = preload("res://lurk/ui/hud.gd")
 const FOG_SHADER := preload("res://lurk/assets/fog.gdshader")
 const BG_SHADER := preload("res://lurk/assets/space_bg.gdshader")
+const GLOW_SHADER := preload("res://lurk/assets/overload_glow.gdshader")
+const GLITCH_SHADER := preload("res://lurk/assets/glitch.gdshader")
 
 const DT := 1.0 / Config.TICK_RATE
 const INTERP_TICKS := Config.SNAPSHOT_EVERY * 2.0    # retardo de interpolación de las naves ajenas
@@ -27,16 +35,20 @@ const FADE_SPEED := 4.0                               # aparición / desaparici�
 const MAX_PENDING := 90
 const BORDER_SHOW_NEAR := 110.0    # a esta distancia del borde se ve entero
 const BORDER_SHOW_FAR := 300.0     # más lejos no se ve
-const TRAIL_STEP := 70.0           # cada cuánto se fija un punto del túnel de luz de una bala propia
+const TRAIL_STEP := 70.0           # cada cuánto se fija un punto del túnel de luz de una bala
 const MAX_FOG_SEGS := 64
 const MAX_FOG_LIGHTS := 24
+const MAX_OCCLUDERS := 24
 const LOCAL_BULLET_TIMEOUT := 0.6  # una bala predicha que el servidor no confirma se descarta
+const BOT_COLOR := Color("#FF9F43")
+const ROCK_BREAK_COLOR := Color("#B9C8E8")
 
 const ACTIONS := {
 	"lurk_up": KEY_W, "lurk_down": KEY_S, "lurk_left": KEY_A, "lurk_right": KEY_D,
 }
 
-enum Ev { HIT_ROCK, HIT_SHIP, BOOM, BUMP, SPAWN }    # igual que en lurk_logic.gd
+## Igual que en lurk_logic.gd
+enum Ev { HIT_ROCK, HIT_SHIP, BOOM, BUMP, SPAWN, BLAST, ROCK_BREAK, PICKUP, CRATE_BREAK, REFLECT }
 
 var _ctx
 var _size := Config.MAP_BASE
@@ -44,21 +56,23 @@ var _started := false
 var _time := 0.0
 
 # Nave propia (predicción)
-var _pred := {"pos": Vector2.ZERO, "vel": Vector2.ZERO, "hp": Config.MAX_HP}
+var _pred := {"pos": Vector2.ZERO, "vel": Vector2.ZERO, "hp": Config.MAX_HP, "overload": false, "frozen": false}
 var _prev_pos := Vector2.ZERO
 var _render_offset := Vector2.ZERO    # suaviza las correcciones del servidor
-var _pending: Array = []              # entradas enviadas aún no confirmadas { s, m, a, f, r, shot }
+var _pending: Array = []              # entradas enviadas aún no confirmadas
 var _seq := 0
 var _acc := 0.0
 var _move := Vector2.ZERO
 var _aim := 0.0
 var _has_state := false
 var _alive := true
+var _me_data := PackedFloat32Array()  # último "me" del servidor
 var _ammo := Config.AMMO              # predicha: la del servidor menos los disparos aún no confirmados
 var _next_fire := 0.0
 var _invuln := 0.0
 var _hp_total := Config.MAX_HP        # vida + armadura (para detectar daño)
 var _fire_queued := false
+var _launch_queued := false
 var _respawn_queued := false
 var _shake := 0.0
 
@@ -67,31 +81,46 @@ var _clock := 0.0
 var _latest_tk := -1
 var _ship_snaps: Array = []           # [{ tk, ships: {pid: PackedFloat32Array} }] (los últimos)
 
-# Balas y luz
+# Balas, luz y ruido
 var _local_bullets: Array = []        # predichas: { seq, pos, dir, travelled, born }
-var _server_bullets: Dictionary = {}  # id -> { pos, vel, tk, mine, seq }
+var _server_bullets: Dictionary = {}  # id -> { pos, vel, tk, mine, seq, special }
 var _confirmed: Dictionary = {}       # seq de disparos propios que el servidor ya creó
-var _trails: Dictionary = {}          # seq -> { last: Vector2 } (punto fijado más reciente del túnel)
-var _segments: Array = []             # tramos de túnel propios { a, b, born }
-var _flashes: Array = []              # destellos de impactos propios { pos, born }
-var _reveals: Array = []              # delaciones de rivales { pos, born }
+var _trails: Dictionary = {}          # clave de bala -> { last, head }
+var _segments: Array = []             # tramos de túnel { a, b, born }
+var _flashes: Array = []              # { pos, radius, born, life }
+var _noises: Array = []               # { pos, born, kind }
+var _pings: Array = []                # radar { pos, born }
+var _last_ping := -100.0
+var _missiles: Dictionary = {}        # id -> { view, pos, angle, tk, mine }
+var _ghosts: Array = []               # [{ owner, pos, vel, tk }]
+var _ghost_views: Array = []
+var _glitch := 0.0
+var _shape_cache: Dictionary = {}     # id -> PackedVector2Array (formas esculpidas recibidas)
 
 # Vistas
 var _world: Node2D
-var _rocks: Node2D                    # capas del mundo: asteroides < gemas < balas < naves < efectos
+var _rocks: Node2D                    # capas del mundo: asteroides < gemas < power-ups < balas < naves < efectos
 var _gem_layer: Node2D
+var _pickup_layer: Node2D
 var _bullet_layer: Node2D
 var _ship_layer: Node2D
 var _fx_layer: Node2D
+var _above_fog: CanvasLayer           # luz que se ve en la oscuridad (Sobrecarga, radar)
+var _radar_layer: Node2D
 var _camera: Camera2D
 var _border: Node2D                   # borde del mapa: solo aparece al acercarse mucho
-var _asteroids: Dictionary = {}       # id -> { view, pos, vel, tk, seen }
+var _asteroids: Dictionary = {}       # id -> { view, pos, vel, rot, spin, tk, seen, r, points, ver, gen_r }
 var _gems: Dictionary = {}            # id -> { view, pos, seen }
+var _pickups: Dictionary = {}         # id -> { view, pos, vel, tk, seen }
+var _crate: Node2D
+var _crate_seen := -1
 var _ships: Dictionary = {}           # pid -> ShipView (ajenas)
+var _glows: Dictionary = {}           # pid -> ColorRect con el resplandor de la Sobrecarga
 var _me: Node2D
 var _bg_mat: ShaderMaterial
 var _fog_mat: ShaderMaterial
-var _fog_rect: ColorRect
+var _glitch_mat: ShaderMaterial
+var _glitch_rect: ColorRect
 var _menu: Control
 var _hud: Control
 
@@ -113,6 +142,12 @@ func _setup_input() -> void:
 			ev.physical_keycode = ACTIONS[action]
 			InputMap.action_add_event(action, ev)
 
+func _color_of(pid: int) -> Color:
+	return BOT_COLOR if pid < 0 else _ctx.player_color(pid)
+
+func _name_of(pid: int) -> String:
+	return "AI" if pid < 0 else _ctx.player_name(pid)
+
 # ── Construcción ─────────────────────────────────────────
 
 func _build() -> void:
@@ -132,12 +167,15 @@ func _build() -> void:
 	_border = Node2D.new()
 	_border.draw.connect(_draw_border)
 	_world.add_child(_border)
-	for layer_name in ["_rocks", "_gem_layer"]:
+	for layer_name in ["_rocks", "_gem_layer", "_pickup_layer"]:
 		var n := Node2D.new()
 		_world.add_child(n)
 		set(layer_name, n)
+	_crate = CrateView.new()
+	_crate.visible = false
+	_pickup_layer.add_child(_crate)
 	_bullet_layer = BulletLayer.new()
-	_bullet_layer.mine_color = _ctx.player_color(_ctx.my_id())
+	_bullet_layer.mine_color = _color_of(_ctx.my_id())
 	_world.add_child(_bullet_layer)
 	_ship_layer = Node2D.new()
 	_world.add_child(_ship_layer)
@@ -147,20 +185,41 @@ func _build() -> void:
 	add_child(_camera)
 	_camera.make_current()
 	_me = ShipView.new()
-	_me.color = _ctx.player_color(_ctx.my_id())
+	_me.color = _color_of(_ctx.my_id())
 	_ship_layer.add_child(_me)
 	_me.visible = false
 
 	var fog_layer := CanvasLayer.new()
 	fog_layer.layer = 5
 	add_child(fog_layer)
-	_fog_rect = ColorRect.new()
-	_fog_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_fog_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fog_rect := ColorRect.new()
+	fog_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	fog_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fog_mat = ShaderMaterial.new()
 	_fog_mat.shader = FOG_SHADER
-	_fog_rect.material = _fog_mat
-	fog_layer.add_child(_fog_rect)
+	fog_rect.material = _fog_mat
+	fog_layer.add_child(fog_rect)
+
+	# Por encima de la niebla pero en coordenadas del mundo (sigue a la cámara)
+	_above_fog = CanvasLayer.new()
+	_above_fog.layer = 6
+	_above_fog.follow_viewport_enabled = true
+	add_child(_above_fog)
+	_radar_layer = Node2D.new()
+	_radar_layer.draw.connect(_draw_radar)
+	_above_fog.add_child(_radar_layer)
+
+	var glitch_layer := CanvasLayer.new()
+	glitch_layer.layer = 15
+	add_child(glitch_layer)
+	_glitch_rect = ColorRect.new()
+	_glitch_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_glitch_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_glitch_mat = ShaderMaterial.new()
+	_glitch_mat.shader = GLITCH_SHADER
+	_glitch_rect.material = _glitch_mat
+	_glitch_rect.visible = false
+	glitch_layer.add_child(_glitch_rect)
 
 	var ui_layer := CanvasLayer.new()
 	ui_layer.layer = 20
@@ -199,17 +258,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not _alive:
 		_respawn_queued = true    # muerto: cualquier tecla o clic reaparece
-	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		_fire_queued = true
+	elif event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			_fire_queued = true    # disparar (o detonar el misil que estás guiando)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			_launch_queued = true  # lanzar misil
 
 func _toggle_fullscreen() -> void:
 	_ctx.set_fullscreen(not _ctx.is_fullscreen())
 	_menu.set_fullscreen_state(_ctx.is_fullscreen())
 
 func _read_move() -> Vector2:
-	if _menu.visible or not _alive:
+	if _menu.visible or not _alive or _pred["frozen"]:
 		return Vector2.ZERO
 	return Vector2(Input.get_axis("lurk_left", "lurk_right"), Input.get_axis("lurk_up", "lurk_down"))
+
+func _me_value(i: int, default: float = 0.0) -> float:
+	return _me_data[i] if _me_data.size() > i else default
 
 # ── Bucle ────────────────────────────────────────────────
 
@@ -231,16 +296,23 @@ func _process(delta: float) -> void:
 
 func _fixed_step() -> void:
 	_move = _read_move()
-	_aim = (get_global_mouse_position() - _me.position).angle()
+	# Guiando un misil, el ratón apunta desde el misil; si no, desde la nave
+	var my_missile := _my_missile_pos()
+	var origin: Vector2 = my_missile if my_missile != Vector2.INF else _me.position
+	_aim = (get_global_mouse_position() - origin).angle()
 	_seq += 1
 	var input := {"s": _seq, "m": _move, "a": _aim}
 	var shot := false
 	if _fire_queued and _alive:
 		input["f"] = true
-		shot = _predict_shot()
+		if not _pred["frozen"]:
+			shot = _predict_shot()
+	if _launch_queued and _alive and _me_value(15) > 0.0 and not _pred["frozen"]:
+		input["ms"] = true
 	if _respawn_queued and not _alive:
 		input["r"] = true
 	_fire_queued = false
+	_launch_queued = false
 	_respawn_queued = false
 	_ctx.send_input(input)
 	var pending := input.duplicate()
@@ -254,15 +326,22 @@ func _fixed_step() -> void:
 
 ## Disparo predicho: si el servidor lo va a aceptar (munición y cadencia), la bala sale ya.
 func _predict_shot() -> bool:
-	if _ammo <= 0 or _time < _next_fire:
+	var special := _me_value(20) > 0.0
+	if (not special and _ammo <= 0) or _time < _next_fire:
 		return false
-	_ammo -= 1
+	if not special:
+		_ammo -= 1
 	_next_fire = _time + Config.FIRE_COOLDOWN
 	_invuln = 0.0
 	var dir := Vector2.from_angle(_aim)
 	var origin: Vector2 = (_pred["pos"] as Vector2) + dir * (Config.SHIP_RADIUS + 6.0)
-	_local_bullets.append({"seq": _seq, "pos": origin, "dir": dir, "travelled": 0.0, "born": _time})
-	_trails[_seq] = {"last": origin}
+	var spread := [0.0]
+	if _me_value(14) > 0.0 and not special:
+		spread = [-Config.HEAVY_SPREAD, 0.0, Config.HEAVY_SPREAD]
+	for i in spread.size():
+		var key := "s%d_%d" % [_seq, i]
+		_local_bullets.append({"seq": _seq, "key": key, "pos": origin, "dir": dir.rotated(spread[i]), "travelled": 0.0, "born": _time, "special": special})
+		_trails[key] = {"last": origin}
 	return true
 
 ## Un paso de la física de la nave propia contra lo que conocemos (asteroides extrapolados y bordes).
@@ -270,11 +349,27 @@ func _simulate(move: Vector2) -> void:
 	Physics.step_ship(_pred, move, DT)
 	for id in _asteroids:
 		var a: Dictionary = _asteroids[id]
-		Physics.collide_ship_circle(_pred, _asteroid_pos(a), a["r"], a["vel"])
+		Physics.collide_ship_rock(_pred, {"pos": _asteroid_pos(a), "rot": _asteroid_rot(a), "r": a["r"], "points": a["points"], "vel": a["vel"]})
 	Physics.collide_ship_border(_pred, _size)
 
+func _since(tk: int) -> float:
+	return (_clock - tk) * DT
+
 func _asteroid_pos(a: Dictionary) -> Vector2:
-	return (a["pos"] as Vector2) + (a["vel"] as Vector2) * (_clock - a["tk"]) * DT
+	return (a["pos"] as Vector2) + (a["vel"] as Vector2) * _since(a["tk"])
+
+func _asteroid_rot(a: Dictionary) -> float:
+	return a["rot"] + a["spin"] * _since(a["tk"])
+
+func _my_missile_pos() -> Vector2:
+	for id in _missiles:
+		var m: Dictionary = _missiles[id]
+		if m["mine"]:
+			return _missile_pos(m)
+	return Vector2.INF
+
+func _missile_pos(m: Dictionary) -> Vector2:
+	return (m["pos"] as Vector2) + Vector2.from_angle(m["angle"]) * Config.MISSILE_SPEED * _since(m["tk"])
 
 # ── Estado del servidor ──────────────────────────────────
 
@@ -290,32 +385,52 @@ func _on_state(s: Dictionary) -> void:
 	if s.get("sz", _size) != _size:
 		_size = s["sz"]
 		_border.queue_redraw()
+	var shapes: Dictionary = s.get("ash", {})
+	for id in shapes:
+		_shape_cache[id] = shapes[id]
 	if s.has("me"):
 		_reconcile(s["me"], s.get("ack", -1))
 	_update_asteroids(s.get("as", PackedFloat32Array()), tk)
 	_update_gems(s.get("gm", PackedFloat32Array()))
+	_update_pickups(s.get("pu", PackedFloat32Array()), tk)
+	_update_crate(s.get("cr", PackedFloat32Array()))
 	_update_bullets(s.get("bl", PackedFloat32Array()), tk)
+	_update_missiles(s.get("ms", PackedFloat32Array()), tk)
 	_ship_snaps.append({"tk": tk, "ships": s.get("sh", {})})
 	while _ship_snaps.size() > 3:
 		_ship_snaps.pop_front()
 	var fl: PackedFloat32Array = s.get("fl", PackedFloat32Array())
 	_flashes.clear()
-	for i in range(0, fl.size(), 3):
-		_flashes.append({"pos": Vector2(fl[i], fl[i + 1]), "born": _time - fl[i + 2]})
-	var rv: PackedFloat32Array = s.get("rv", PackedFloat32Array())
-	_reveals.clear()
-	for i in range(0, rv.size(), 3):
-		_reveals.append({"pos": Vector2(rv[i], rv[i + 1]), "born": _time - rv[i + 2]})
+	for i in range(0, fl.size(), 5):
+		_flashes.append({"pos": Vector2(fl[i], fl[i + 1]), "radius": fl[i + 2], "born": _time - fl[i + 3], "life": fl[i + 4]})
+	var nz: PackedFloat32Array = s.get("nz", PackedFloat32Array())
+	_noises.clear()
+	for i in range(0, nz.size(), 4):
+		_noises.append({"pos": Vector2(nz[i], nz[i + 1]), "born": _time - nz[i + 2], "kind": int(nz[i + 3])})
+	var rd: PackedFloat32Array = s.get("rd", PackedFloat32Array())
+	_pings.clear()
+	for i in range(0, rd.size(), 3):
+		var born := _time - rd[i + 2]
+		_pings.append({"pos": Vector2(rd[i], rd[i + 1]), "born": born})
+		if born > _last_ping + 0.5:
+			_last_ping = born
+	_ghosts.clear()
+	for g in s.get("gh", []):
+		_ghosts.append({"owner": g[0], "pos": Vector2(g[1], g[2]), "vel": Vector2(g[3], g[4]), "tk": tk})
+	_update_ranking(s.get("rk", []))
 	_play_events(s.get("ev", PackedFloat32Array()))
 
 ## Corrige la predicción: parte del estado del servidor y rehace las entradas que aún no ha procesado.
 func _reconcile(me: PackedFloat32Array, ack: int) -> void:
+	_me_data = me
 	var before: Vector2 = _pred["pos"]
 	var was_alive := _alive
 	_alive = me[10] > 0.5
 	_pred["pos"] = Vector2(me[0], me[1])
 	_pred["vel"] = Vector2(me[2], me[3])
 	_pred["hp"] = me[5]
+	_pred["overload"] = me[19] > 0.0
+	_pred["frozen"] = me[21] > 0.5
 	_invuln = me[9]
 	var total: float = me[5] + me[11]
 	if _has_state and _alive and total < _hp_total - 0.001:
@@ -326,16 +441,12 @@ func _reconcile(me: PackedFloat32Array, ack: int) -> void:
 		_pending.pop_front()
 	var unconfirmed_shots := 0
 	for input in _pending:
-		if input["shot"]:
+		if input["shot"] and _me_value(20) <= 0.0:
 			unconfirmed_shots += 1
 		if _alive:
 			_simulate(input["m"])
 	_ammo = maxi(0, int(me[7]) - unconfirmed_shots)
-	_hud.hp = me[5]
-	_hud.armor = me[11]
-	_hud.ammo = _ammo
-	_hud.reload_left = me[8]
-	_hud.set_dead(not _alive)
+	_update_hud_from_me(me)
 	_me.visible = _alive
 	if not _has_state or (_alive and not was_alive):
 		# Primer estado o reaparición: sin suavizar el salto
@@ -349,18 +460,61 @@ func _reconcile(me: PackedFloat32Array, ack: int) -> void:
 	_prev_pos -= jump    # mantiene la interpolación entre pasos coherente con la corrección
 	_render_offset = Vector2.ZERO if jump.length() > 160.0 else _render_offset + jump
 
+func _update_hud_from_me(me: PackedFloat32Array) -> void:
+	_hud.hp = me[5]
+	_hud.armor = me[11]
+	_hud.ammo = _ammo
+	_hud.reload_left = me[8]
+	_hud.missiles = int(me[15])
+	_hud.special_ammo = int(me[20])
+	_hud.set_dead(not _alive)
+	var fx: Array = []
+	if me[12] > 1.0:
+		fx.append({"kind": PU.Kind.VISOR, "left": -1.0, "total": 0.0})
+	if me[13] > 0.0:
+		fx.append({"kind": PU.Kind.RADAR, "left": -1.0, "total": 0.0})
+	if me[14] > 0.0:
+		fx.append({"kind": PU.Kind.HEAVY, "left": -1.0, "total": 0.0})
+	if me[18] > 0.0:
+		fx.append({"kind": PU.Kind.EXPLOSIVE, "left": -1.0, "total": 0.0})
+	if me[16] > 0.0:
+		fx.append({"kind": PU.Kind.SHIELD, "left": me[16], "total": Config.SHIELD_TIME})
+	if me[17] > 0.0:
+		fx.append({"kind": PU.Kind.SPECTRE, "left": me[17], "total": Config.SPECTRE_TIME})
+	if me[19] > 0.0:
+		fx.append({"kind": PU.Kind.OVERLOAD, "left": me[19], "total": Config.OVERLOAD_TIME})
+	_hud.effects = fx
+
+func _update_ranking(rk: Array) -> void:
+	var rows: Array = []
+	for r in rk:
+		rows.append({"name": _name_of(r[0]), "score": r[1], "me": r[0] == _ctx.my_id()})
+	rows.sort_custom(func(a, b): return a["score"] > b["score"])
+	_hud.ranking = rows
+
 func _update_asteroids(data: PackedFloat32Array, tk: int) -> void:
-	for i in range(0, data.size(), 6):
+	for i in range(0, data.size(), 9):
 		var id := int(data[i])
+		var ver := int(data[i + 8])
+		var gen_r: float = data[i + 5]
 		var a: Dictionary = _asteroids.get(id, {})
-		if a.is_empty():
-			var view := AsteroidView.new()
-			view.setup(id, data[i + 5])
-			_rocks.add_child(view)
-			a = {"view": view, "r": data[i + 5]}
-			_asteroids[id] = a
+		if a.is_empty() or a["ver"] != ver:
+			var pts: PackedVector2Array = Shapes.generate(id, gen_r)["points"] if ver == 0 else _shape_cache.get(id, PackedVector2Array())
+			if pts.size() < 3:
+				pts = Shapes.generate(id, gen_r)["points"]
+			if a.is_empty():
+				var view := AsteroidView.new()
+				_rocks.add_child(view)
+				a = {"view": view}
+				_asteroids[id] = a
+			a["view"].setup(id, gen_r, pts)
+			a["points"] = pts
+			a["r"] = Shapes.bounding_radius(pts)
+			a["ver"] = ver
 		a["pos"] = Vector2(data[i + 1], data[i + 2])
 		a["vel"] = Vector2(data[i + 3], data[i + 4])
+		a["rot"] = data[i + 6]
+		a["spin"] = data[i + 7]
 		a["tk"] = tk
 		a["seen"] = tk
 
@@ -376,30 +530,75 @@ func _update_gems(data: PackedFloat32Array) -> void:
 		g["pos"] = Vector2(data[i + 1], data[i + 2])
 		g["seen"] = _latest_tk
 
+func _update_pickups(data: PackedFloat32Array, tk: int) -> void:
+	for i in range(0, data.size(), 6):
+		var id := int(data[i])
+		var p: Dictionary = _pickups.get(id, {})
+		if p.is_empty():
+			var view := PickupView.new()
+			_pickup_layer.add_child(view)
+			p = {"view": view}
+			_pickups[id] = p
+		p["view"].kind = int(data[i + 1])
+		p["pos"] = Vector2(data[i + 2], data[i + 3])
+		p["vel"] = Vector2(data[i + 4], data[i + 5])
+		p["tk"] = tk
+		p["seen"] = tk
+
+func _update_crate(data: PackedFloat32Array) -> void:
+	if data.size() >= 3:
+		_crate.position = Vector2(data[0], data[1])
+		_crate.health = data[2]
+		_crate_seen = _latest_tk
+		_crate.visible = true
+
 func _update_bullets(data: PackedFloat32Array, tk: int) -> void:
 	var present := {}
-	for i in range(0, data.size(), 7):
+	for i in range(0, data.size(), 8):
 		var id := int(data[i])
 		var mine := data[i + 5] > 0.5
 		var seq := int(data[i + 6])
-		_server_bullets[id] = {"pos": Vector2(data[i + 1], data[i + 2]), "vel": Vector2(data[i + 3], data[i + 4]), "tk": tk, "mine": mine, "seq": seq}
+		_server_bullets[id] = {"pos": Vector2(data[i + 1], data[i + 2]), "vel": Vector2(data[i + 3], data[i + 4]), "tk": tk,
+			"mine": mine, "seq": seq, "special": data[i + 7] > 0.5}
 		present[id] = true
-		if mine and not _confirmed.has(seq):
-			# El servidor ya tiene esta bala: la predicha deja paso a la suya
+		if mine and seq >= 0 and not _confirmed.has(seq):
+			# El servidor ya tiene este disparo: las balas predichas dejan paso a las suyas
 			_confirmed[seq] = true
+			for b in _local_bullets:
+				if b["seq"] == seq:
+					_trails.erase(b["key"])
 			_local_bullets = _local_bullets.filter(func(b): return b["seq"] != seq)
 	for id in _server_bullets.keys():
 		if not present.has(id):
-			var b: Dictionary = _server_bullets[id]
-			if b["mine"]:
-				_trails.erase(b["seq"])
+			_trails.erase("b%d" % id)
 			_server_bullets.erase(id)
 
+func _update_missiles(data: PackedFloat32Array, tk: int) -> void:
+	var present := {}
+	for i in range(0, data.size(), 5):
+		var id := int(data[i])
+		var m: Dictionary = _missiles.get(id, {})
+		if m.is_empty():
+			var view := MissileView.new()
+			_ship_layer.add_child(view)
+			m = {"view": view}
+			_missiles[id] = m
+		m["pos"] = Vector2(data[i + 1], data[i + 2])
+		m["angle"] = data[i + 3]
+		m["mine"] = data[i + 4] > 0.5
+		m["tk"] = tk
+		present[id] = true
+	for id in _missiles.keys():
+		if not present.has(id):
+			_missiles[id]["view"].queue_free()
+			_missiles.erase(id)
+
 func _play_events(ev: PackedFloat32Array) -> void:
-	for i in range(0, ev.size(), 4):
+	for i in range(0, ev.size(), 5):
 		var kind := int(ev[i])
 		var pos := Vector2(ev[i + 1], ev[i + 2])
 		var mine := ev[i + 3] > 0.5
+		var extra: float = ev[i + 4]
 		var fx := Fx.new()
 		fx.position = pos
 		match kind:
@@ -415,6 +614,20 @@ func _play_events(ev: PackedFloat32Array) -> void:
 				fx.setup(Fx.Kind.BUMP, Neon.WHITE)
 			Ev.SPAWN:
 				fx.setup(Fx.Kind.SPAWN, _me.color if mine else Neon.WHITE)
+			Ev.BLAST:
+				fx.setup(Fx.Kind.BLAST, Color("#FF9F43"), extra)
+				_shake = maxf(_shake, clampf(extra / 20.0, 3.0, 12.0) * (1.0 if _me.position.distance_to(pos) < 900.0 else 0.0))
+			Ev.ROCK_BREAK:
+				fx.setup(Fx.Kind.EXPLOSION, ROCK_BREAK_COLOR)
+			Ev.PICKUP:
+				fx.setup(Fx.Kind.SPAWN, Art.color_of(int(extra)))
+				if mine:
+					_hud.toast(PU.NAMES.get(int(extra), ""), Art.color_of(int(extra)))
+			Ev.CRATE_BREAK:
+				fx.setup(Fx.Kind.BLAST, Color("#FFE066"), 90.0)
+				_crate.visible = false
+			Ev.REFLECT:
+				fx.setup(Fx.Kind.SPARK, Color("#FFE066"))
 		_fx_layer.add_child(fx)
 
 # ── Vistas ───────────────────────────────────────────────
@@ -426,38 +639,54 @@ func _update_views(delta: float) -> void:
 	_me.aim = _aim
 	_me.thrust_dir = _move
 	_me.invulnerable = _invuln > 0.0
+	_me.shield = _me_value(16) > 0.0
+	_me.overload = _me_value(19) > 0.0
+	_me.cloak = 0.6 if _me_value(17) > 0.0 else 0.0    # Espectro: te ves translúcido
 	var shake := Vector2(randf_range(-1, 1), randf_range(-1, 1)) * _shake
-	_camera.position = my_pos + shake
-	var edge_dist := minf(minf(my_pos.x, my_pos.y), minf(_size - my_pos.x, _size - my_pos.y))
+	# Guiando un misil, la cámara lo sigue
+	var missile_pos := _my_missile_pos()
+	var focus: Vector2 = missile_pos if missile_pos != Vector2.INF else my_pos
+	_camera.position = focus + shake
+	var edge_dist := minf(minf(focus.x, focus.y), minf(_size - focus.x, _size - focus.y))
 	_border.modulate.a = 1.0 - smoothstep(BORDER_SHOW_NEAR, BORDER_SHOW_FAR, edge_dist)
 	var vp := get_viewport().get_visible_rect().size
 	var zoom := vp.y / VIEW_HEIGHT
 	_camera.zoom = Vector2(zoom, zoom)
 
-	# Asteroides y gemas: lo que deja de llegar se desvanece y se borra
-	for id in _asteroids.keys():
-		var a: Dictionary = _asteroids[id]
-		var visible_now: bool = a["seen"] == _latest_tk
+	_fade_entities(_asteroids, delta, FADE_SPEED, func(a):
 		a["view"].position = _asteroid_pos(a)
-		a["view"].alpha = move_toward(a["view"].alpha, 1.0 if visible_now else 0.0, delta * FADE_SPEED)
-		if not visible_now and a["view"].alpha <= 0.0:
-			a["view"].queue_free()
-			_asteroids.erase(id)
-	for id in _gems.keys():
-		var g: Dictionary = _gems[id]
-		var visible_now: bool = g["seen"] == _latest_tk
-		g["view"].position = g["pos"]
-		g["view"].alpha = move_toward(g["view"].alpha, 1.0 if visible_now else 0.0, delta * FADE_SPEED * 2.0)
-		if not visible_now and g["view"].alpha <= 0.0:
-			g["view"].queue_free()
-			_gems.erase(id)
+		a["view"].rotation = _asteroid_rot(a))
+	_fade_entities(_gems, delta, FADE_SPEED * 2.0, func(g): g["view"].position = g["pos"])
+	_fade_entities(_pickups, delta, FADE_SPEED * 2.0, func(p): p["view"].position = (p["pos"] as Vector2) + (p["vel"] as Vector2) * _since(p["tk"]))
+	_crate.alpha = move_toward(_crate.alpha, 1.0 if _crate_seen == _latest_tk else 0.0, delta * FADE_SPEED)
+	for id in _missiles:
+		var m: Dictionary = _missiles[id]
+		m["view"].position = _missile_pos(m)
+		m["view"].angle = m["angle"]
 	_update_other_ships(delta)
+	_update_ghosts()
 	_update_bullet_views(delta)
+	_update_glows(my_pos)
 	_update_fog(my_pos, vp)
 	_update_reveals(vp)
+	_radar_layer.queue_redraw()
+	_glitch = move_toward(_glitch, 1.0 if not _ghosts.is_empty() else 0.0, delta * 3.0)
+	_glitch_rect.visible = _glitch > 0.0
+	_glitch_mat.set_shader_parameter("amount", _glitch)
 	_bg_mat.set_shader_parameter("screen_size", vp)
-	_bg_mat.set_shader_parameter("cam_pos", my_pos)
+	_bg_mat.set_shader_parameter("cam_pos", focus)
 	_bg_mat.set_shader_parameter("zoom", zoom)
+
+## Lo que deja de llegar se desvanece y se borra; `place` coloca cada vista.
+func _fade_entities(dict: Dictionary, delta: float, speed: float, place: Callable) -> void:
+	for id in dict.keys():
+		var e: Dictionary = dict[id]
+		var visible_now: bool = e["seen"] == _latest_tk
+		place.call(e)
+		e["view"].alpha = move_toward(e["view"].alpha, 1.0 if visible_now else 0.0, delta * speed)
+		if not visible_now and e["view"].alpha <= 0.0:
+			e["view"].queue_free()
+			dict.erase(id)
 
 ## Naves ajenas interpoladas entre los dos estados que rodean (reloj - retardo).
 func _update_other_ships(delta: float) -> void:
@@ -482,14 +711,18 @@ func _update_other_ships(delta: float) -> void:
 			var view: Node2D = _ships.get(pid)
 			if view == null:
 				view = ShipView.new()
-				view.color = _ctx.player_color(pid)
+				view.color = _color_of(pid)
 				view.alpha = 0.0
 				_ship_layer.add_child(view)
 				_ships[pid] = view
 			view.position = Vector2(na[0], na[1]).lerp(Vector2(nb[0], nb[1]), t)
 			view.aim = lerp_angle(na[4], nb[4], t)
 			view.thrust_dir = Vector2(nb[5], nb[6])
-			view.invulnerable = nb[7] > 0.5
+			var flags := int(nb[7])
+			view.invulnerable = flags & 1 != 0
+			view.shield = flags & 2 != 0
+			view.overload = flags & 4 != 0
+			view.cloak = 1.0 if flags & 8 != 0 else 0.0
 			shown[pid] = true
 	for pid in _ships.keys():
 		var view: Node2D = _ships[pid]
@@ -498,8 +731,27 @@ func _update_other_ships(delta: float) -> void:
 			view.queue_free()
 			_ships.erase(pid)
 
-## Balas: las propias predichas avanzan solas; las del servidor se extrapolan. Las propias van dejando
-## tramos de túnel de luz (para la niebla) a medida que avanzan.
+## Naves fantasma del sabotaje psiónico: se dibujan igual que las reales.
+func _update_ghosts() -> void:
+	while _ghost_views.size() < _ghosts.size():
+		var v := ShipView.new()
+		_ship_layer.add_child(v)
+		_ghost_views.append(v)
+	for i in _ghost_views.size():
+		var v: Node2D = _ghost_views[i]
+		v.visible = i < _ghosts.size()
+		if not v.visible:
+			continue
+		var g: Dictionary = _ghosts[i]
+		var vel: Vector2 = g["vel"]
+		v.color = _color_of(g["owner"])
+		v.set_color(v.color)
+		v.position = (g["pos"] as Vector2) + vel * _since(g["tk"])
+		v.aim = vel.angle()
+		v.thrust_dir = vel.normalized()
+
+## Balas: las propias predichas avanzan solas; las del servidor se extrapolan. Todas van dejando
+## tramos de túnel de luz (la luz de las balas es para todos).
 func _update_bullet_views(delta: float) -> void:
 	var items: Array = []
 	var alive_local: Array = []
@@ -512,17 +764,16 @@ func _update_bullet_views(delta: float) -> void:
 		if blocked >= 0.0:
 			to = from.lerp(to, blocked)
 		b["pos"] = to
-		_extend_trail(b["seq"], to, blocked >= 0.0 or b["travelled"] >= Config.BULLET_RANGE)
+		_extend_trail(b["key"], to, blocked >= 0.0 or b["travelled"] >= Config.BULLET_RANGE)
 		if blocked < 0.0 and b["travelled"] < Config.BULLET_RANGE and _time - b["born"] < LOCAL_BULLET_TIMEOUT + 1.0:
 			alive_local.append(b)
-			items.append({"pos": to, "dir": b["dir"], "mine": true})
+			items.append({"pos": to, "dir": b["dir"], "mine": true, "special": b["special"]})
 	_local_bullets = alive_local
 	for id in _server_bullets:
 		var b: Dictionary = _server_bullets[id]
-		var pos: Vector2 = (b["pos"] as Vector2) + (b["vel"] as Vector2) * (_clock - b["tk"]) * DT
-		items.append({"pos": pos, "dir": (b["vel"] as Vector2).normalized(), "mine": b["mine"]})
-		if b["mine"]:
-			_extend_trail(b["seq"], pos, false)
+		var pos: Vector2 = (b["pos"] as Vector2) + (b["vel"] as Vector2) * _since(b["tk"])
+		items.append({"pos": pos, "dir": (b["vel"] as Vector2).normalized(), "mine": b["mine"], "special": b["special"]})
+		_extend_trail("b%d" % id, pos, false)
 	_bullet_layer.items = items
 	_segments = _segments.filter(func(s): return _time - s["born"] < Config.TUNNEL_TIME)
 
@@ -531,18 +782,22 @@ func _known_obstacle(from: Vector2, to: Vector2) -> float:
 	var best := -1.0
 	for id in _asteroids:
 		var a: Dictionary = _asteroids[id]
-		var t := Physics.segment_hits_circle(from, to, _asteroid_pos(a), a["r"] * 0.92)
-		if t >= 0.0 and (best < 0.0 or t < best):
-			best = t
+		var center := _asteroid_pos(a)
+		if Physics.point_segment_distance(center, from, to) > a["r"]:
+			continue
+		var rot := _asteroid_rot(a)
+		var h := Shapes.segment_hit(a["points"], (from - center).rotated(-rot), (to - center).rotated(-rot))
+		if not h.is_empty() and (best < 0.0 or h["t"] < best):
+			best = h["t"]
 	if to.x < 0.0 or to.y < 0.0 or to.x > _size or to.y > _size:
 		best = 0.0 if best < 0.0 else best
 	return best
 
-## Fija tramos del túnel de luz de la bala `seq` cada TRAIL_STEP píxeles (o al terminar).
-func _extend_trail(seq: int, pos: Vector2, finish: bool) -> void:
-	var trail: Dictionary = _trails.get(seq, {})
+## Fija tramos del túnel de luz de una bala cada TRAIL_STEP píxeles (o al terminar).
+func _extend_trail(key: String, pos: Vector2, finish: bool) -> void:
+	var trail: Dictionary = _trails.get(key, {})
 	if trail.is_empty():
-		_trails[seq] = {"last": pos}
+		_trails[key] = {"last": pos}
 		return
 	var last: Vector2 = trail["last"]
 	if last.distance_to(pos) >= TRAIL_STEP or finish:
@@ -550,39 +805,99 @@ func _extend_trail(seq: int, pos: Vector2, finish: bool) -> void:
 		trail["last"] = pos
 	trail["head"] = pos
 	if finish:
-		_trails.erase(seq)
+		_trails.erase(key)
+
+## Resplandor de la Sobrecarga (propio o ajeno) con sombras de los asteroides cercanos.
+func _update_glows(my_pos: Vector2) -> void:
+	var sources := {}
+	if _me_value(19) > 0.0 and _alive:
+		sources[_ctx.my_id()] = my_pos
+	for pid in _ships:
+		if _ships[pid].overload and _ships[pid].alpha > 0.0:
+			sources[pid] = _ships[pid].position
+	for pid in _glows.keys():
+		if not sources.has(pid):
+			_glows[pid].queue_free()
+			_glows.erase(pid)
+	for pid in sources:
+		var glow: ColorRect = _glows.get(pid)
+		if glow == null:
+			glow = ColorRect.new()
+			glow.size = Vector2.ONE * Config.OVERLOAD_GLOW * 2.0
+			glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var mat := ShaderMaterial.new()
+			mat.shader = GLOW_SHADER
+			mat.set_shader_parameter("radius", Config.OVERLOAD_GLOW)
+			glow.material = mat
+			_above_fog.add_child(glow)
+			_glows[pid] = glow
+		var center: Vector2 = sources[pid]
+		glow.position = center - glow.size / 2.0
+		var occ := PackedVector3Array()
+		for oc in _occluders(center, Config.OVERLOAD_GLOW):
+			occ.append(Vector3(oc.x - center.x, oc.y - center.y, oc.z))
+		(glow.material as ShaderMaterial).set_shader_parameter("occluders", occ)
+		(glow.material as ShaderMaterial).set_shader_parameter("occluder_count", occ.size())
+
+## Asteroides que pueden tapar una luz en `center` (x, y, radio aproximado), en el mundo.
+func _occluders(center: Vector2, radius: float) -> Array:
+	var out: Array = []
+	for id in _asteroids:
+		var a: Dictionary = _asteroids[id]
+		var p := _asteroid_pos(a)
+		if p.distance_to(center) < radius + a["r"] and out.size() < MAX_OCCLUDERS:
+			out.append(Vector3(p.x, p.y, a["r"] * 0.82))
+	return out
 
 func _update_fog(my_pos: Vector2, vp: Vector2) -> void:
 	var xf := get_viewport().get_canvas_transform()
 	var zoom: float = xf.get_scale().x
 	var lights := PackedVector4Array()
-	if _alive:
-		var sp: Vector2 = xf * my_pos
-		lights.append(Vector4(sp.x, sp.y, Config.VISION_RADIUS * zoom, 1.0))
-	else:
-		var sp: Vector2 = xf * my_pos
-		lights.append(Vector4(sp.x, sp.y, Config.VISION_RADIUS * 0.6 * zoom, 0.6))
+	var sp: Vector2 = xf * my_pos
+	var vision := Config.VISION_RADIUS * _me_value(12, 1.0)
+	lights.append(Vector4(sp.x, sp.y, vision * zoom, 1.0) if _alive else Vector4(sp.x, sp.y, Config.VISION_RADIUS * 0.6 * zoom, 0.6))
 	for f in _flashes:
-		var k: float = 1.0 - (_time - f["born"]) / Config.FLASH_TIME
+		var k: float = 1.0 - (_time - f["born"]) / f["life"]
 		if k > 0.0 and lights.size() < MAX_FOG_LIGHTS:
 			var fp: Vector2 = xf * (f["pos"] as Vector2)
-			lights.append(Vector4(fp.x, fp.y, Config.FLASH_RADIUS * zoom * k, k))
+			lights.append(Vector4(fp.x, fp.y, f["radius"] * zoom * k, k))
+	for id in _missiles:
+		if lights.size() < MAX_FOG_LIGHTS:
+			var mp: Vector2 = xf * _missile_pos(_missiles[id])
+			lights.append(Vector4(mp.x, mp.y, Config.MISSILE_LIGHT * zoom, 1.0))
 	var seg_a := PackedVector4Array()
 	var seg_b := PackedVector4Array()
-	# Tramos fijados (se apagan con la edad) y tramo vivo de cada bala propia hasta su cabeza
+	# Tramos fijados (se apagan con la edad) y tramo vivo de cada bala hasta su cabeza
 	for s in _segments:
 		var k: float = 1.0 - (_time - s["born"]) / Config.TUNNEL_TIME
 		_add_seg(seg_a, seg_b, xf, s["a"], s["b"], Config.TUNNEL_RADIUS * zoom * (0.6 + 0.4 * k), k)
-	for seq in _trails:
-		var tr: Dictionary = _trails[seq]
+	for key in _trails:
+		var tr: Dictionary = _trails[key]
 		if tr.has("head"):
 			_add_seg(seg_a, seg_b, xf, tr["last"], tr["head"], Config.TUNNEL_RADIUS * zoom, 1.0)
+	# Luces con sombras: el resplandor de la Sobrecarga
+	var glows := PackedVector4Array()
+	var occ := PackedVector3Array()
+	for pid in _glows:
+		if glows.size() >= 4:
+			break
+		var center: Vector2 = _glows[pid].position + _glows[pid].size / 2.0
+		var gp: Vector2 = xf * center
+		glows.append(Vector4(gp.x, gp.y, Config.OVERLOAD_GLOW * zoom, 1.0))
+		for oc in _occluders(center, Config.OVERLOAD_GLOW):
+			if occ.size() < MAX_OCCLUDERS:
+				var op: Vector2 = xf * Vector2(oc.x, oc.y)
+				occ.append(Vector3(op.x, op.y, oc.z * zoom))
 	_fog_mat.set_shader_parameter("screen_size", vp)
 	_fog_mat.set_shader_parameter("lights", lights)
 	_fog_mat.set_shader_parameter("light_count", lights.size())
 	_fog_mat.set_shader_parameter("seg_a", seg_a)
 	_fog_mat.set_shader_parameter("seg_b", seg_b)
 	_fog_mat.set_shader_parameter("seg_count", seg_a.size())
+	_fog_mat.set_shader_parameter("glows", glows)
+	_fog_mat.set_shader_parameter("glow_count", glows.size())
+	_fog_mat.set_shader_parameter("occ", occ)
+	_fog_mat.set_shader_parameter("occ_count", occ.size())
 
 func _add_seg(seg_a: PackedVector4Array, seg_b: PackedVector4Array, xf: Transform2D, a: Vector2, b: Vector2, radius: float, k: float) -> void:
 	if seg_a.size() >= MAX_FOG_SEGS or k <= 0.0:
@@ -592,25 +907,41 @@ func _add_seg(seg_a: PackedVector4Array, seg_b: PackedVector4Array, xf: Transfor
 	seg_a.append(Vector4(sa.x, sa.y, radius, k))
 	seg_b.append(Vector4(sb.x, sb.y, radius, k))
 
-## Flechas de delación: en el borde de la pantalla apuntando al rival, o un aro si está a la vista.
+## Radar: puntos verdes que parpadean donde aproximadamente están los rivales, y la onda del sonar.
+func _draw_radar() -> void:
+	var green := Color("#86F730")
+	var since_ping := _time - _last_ping
+	if since_ping < 1.2 and _alive:
+		var k := since_ping / 1.2
+		_radar_layer.draw_arc(_me.position, 40.0 + k * 900.0, 0.0, TAU, 96, Color(green, 0.35 * (1.0 - k)), 2.0, true)
+	for p in _pings:
+		var age: float = _time - p["born"]
+		var a := (1.0 - age / Config.RADAR_SHOW) * (0.55 + 0.45 * absf(sin(age * 9.0)))
+		Neon.glow_circle(_radar_layer, p["pos"], 4.0, Color(green, a), 1.3)
+		_radar_layer.draw_arc(p["pos"], 12.0 + age * 18.0, 0.0, TAU, 24, Color(green, a * 0.5), 1.2, true)
+
+## Flechas de ruido: en el borde de la pantalla apuntando a la fuente, o un aro si está a la vista.
 func _update_reveals(vp: Vector2) -> void:
 	var xf := get_viewport().get_canvas_transform()
 	var center := vp / 2.0
 	var out: Array = []
-	for r in _reveals:
+	if vp.x < 200.0 or vp.y < 200.0:
+		_hud.reveals = out    # ventana minúscula (p. ej. sin pantalla): nada que dibujar
+		return
+	for r in _noises:
 		var age: float = _time - r["born"]
 		if age >= Config.REVEAL_TIME:
 			continue
 		var alpha := 1.0 - smoothstep(Config.REVEAL_TIME * 0.6, Config.REVEAL_TIME, age)
 		var sp: Vector2 = xf * (r["pos"] as Vector2)
-		var margin := 40.0
+		var margin := 48.0
 		var on_screen := Rect2(Vector2(margin, margin), vp - Vector2(margin, margin) * 2.0).has_point(sp)
 		var dir := (sp - center).normalized()
 		var pos := sp
 		if not on_screen:
-			# Punto del borde (con margen) en la dirección del rival
+			# Punto del borde (con margen) en la dirección de la fuente
 			var half := center - Vector2(margin, margin)
 			var t := minf(half.x / maxf(absf(dir.x), 0.0001), half.y / maxf(absf(dir.y), 0.0001))
 			pos = center + dir * t
-		out.append({"pos": pos, "angle": dir.angle(), "on_screen": on_screen, "alpha": alpha})
+		out.append({"pos": pos, "angle": dir.angle(), "on_screen": on_screen, "alpha": alpha, "kind": r["kind"]})
 	_hud.reveals = out

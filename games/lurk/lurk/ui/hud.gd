@@ -1,11 +1,14 @@
 extends Control
 ## HUD de Lurk (pantalla): vida en celdas con llenado parcial, armadura como celdas extra, munición con
-## la barra de recarga, flechas de delación hacia los rivales, destello al recibir daño y pantalla de
-## muerte (cualquier tecla o clic, o el botón, para reaparecer).
+## la barra de recarga (y la especial de la Sobrecarga), power-ups activos con su tiempo, misiles,
+## ranking en vivo, flechas de ruido hacia los rivales (un icono por tipo: disparo o choque), destello
+## al recibir daño y pantalla de muerte.
 
 signal respawn_requested
 
 const Style = preload("style.gd")
+const Art = preload("res://lurk/render/powerup_art.gd")
+const PU = preload("res://lurk/shared/powerups.gd")
 const CELL := Vector2(34, 12)
 const CELL_GAP := 5.0
 const MARGIN := 26.0
@@ -13,19 +16,33 @@ const HP_COLOR := Color("#86F730")
 const HP_LOW_COLOR := Color("#FF6B8B")
 const ARMOR_COLOR := Color("#A6C8FF")
 const AMMO_COLOR := Color("#FFFFFF")
-const REVEAL_COLOR := Color("#FF6B8B")
+const SPECIAL_COLOR := Color("#FFE066")
+const SHOT_COLOR := Color("#FF6B8B")
+const CRASH_COLOR := Color("#FFB86B")
 const DAMAGE_FLASH := 0.45
+const TOAST_TIME := 2.2
+const NOISE_SHOT := 0
 
 var hp := 3.0
 var max_hp := 3.0
 var armor := 0.0
 var ammo := 3
 var max_ammo := 3
+var special_ammo := 0
 var reload_left := 0.0
 var reload_time := 5.0
-## Flechas: [{ pos: Vector2 (pantalla), angle: float, on_screen: bool, alpha: float }]
+var missiles := 0
+## Efectos activos: [{ kind, left (s, -1 = hasta morir), total }]
+var effects: Array = []
+## Ranking: [{ name, score, me }] (vacío = sin puntos, p. ej. contra la IA)
+var ranking: Array = []
+## Flechas: [{ pos: Vector2 (pantalla), angle, on_screen, alpha, kind }]
 var reveals: Array = []
 var _damage_t := 0.0
+var _toast := ""
+var _toast_color := Color.WHITE
+var _toast_t := 0.0
+var _t := 0.0
 var _canvas: Control
 var _death: Control
 
@@ -70,14 +87,18 @@ func _build_death_screen() -> void:
 func set_dead(dead: bool) -> void:
 	_death.visible = dead
 
-func is_dead_screen() -> bool:
-	return _death.visible
-
 func flash_damage() -> void:
 	_damage_t = DAMAGE_FLASH
 
+func toast(text: String, color: Color) -> void:
+	_toast = text.to_upper()
+	_toast_color = color
+	_toast_t = TOAST_TIME
+
 func _process(delta: float) -> void:
+	_t += delta
 	_damage_t = maxf(0.0, _damage_t - delta)
+	_toast_t = maxf(0.0, _toast_t - delta)
 	_canvas.queue_redraw()
 
 func _draw_hud() -> void:
@@ -88,43 +109,97 @@ func _draw_hud() -> void:
 		for i in 6:
 			var inset := float(i) * 10.0
 			_canvas.draw_rect(Rect2(Vector2(inset, inset), vp - Vector2(inset, inset) * 2.0), Color(HP_LOW_COLOR, 0.10 * a * (1.0 - i / 6.0)), false, 10.0)
+	_draw_reveals()
+	_draw_ranking(vp)
+	if _toast_t > 0.0:
+		var font := Style.font(700, 4)
+		var a := minf(1.0, _toast_t / 0.4)
+		var w := font.get_string_size(_toast, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
+		_canvas.draw_string(font, Vector2((vp.x - w) / 2.0, 92.0), _toast, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(_toast_color, a))
 	if _death.visible:
 		return
 	# Vida: celdas con llenado parcial; armadura: celdas extra tras la vida
 	var origin := Vector2(MARGIN, vp.y - MARGIN - CELL.y)
 	var hp_color := HP_LOW_COLOR if hp <= max_hp * 0.5 else HP_COLOR
-	for i in int(ceil(max_hp)):
-		var fill := clampf(hp - i, 0.0, 1.0)
-		_cell(origin + Vector2(i * (CELL.x + CELL_GAP), 0), fill, hp_color)
-	var armor_cells := int(ceil(armor))
-	for i in armor_cells:
-		var fill := clampf(armor - i, 0.0, 1.0)
-		_cell(origin + Vector2((int(ceil(max_hp)) + i) * (CELL.x + CELL_GAP) + 6.0, 0), fill, ARMOR_COLOR)
+	var hp_cells := int(ceil(max_hp))
+	for i in hp_cells:
+		_cell(origin + Vector2(i * (CELL.x + CELL_GAP), 0), clampf(hp - i, 0.0, 1.0), hp_color)
+	for i in int(ceil(armor)):
+		_cell(origin + Vector2((hp_cells + i) * (CELL.x + CELL_GAP) + 6.0, 0), clampf(armor - i, 0.0, 1.0), ARMOR_COLOR)
 	# Munición: una pastilla por bala; al recargar, barra de progreso en su lugar
 	var ammo_origin := origin + Vector2(0, -24)
-	if reload_left > 0.0:
+	if special_ammo > 0:
+		for i in special_ammo:
+			_canvas.draw_rect(Rect2(ammo_origin + Vector2(i * 12.0, 0), Vector2(8, 6)), Color(SPECIAL_COLOR, 0.95))
+	elif reload_left > 0.0:
 		var w := 3 * 14.0 + 2 * 6.0
 		var k := 1.0 - reload_left / reload_time
 		_canvas.draw_rect(Rect2(ammo_origin, Vector2(w, 6)), Color(AMMO_COLOR, 0.15))
 		_canvas.draw_rect(Rect2(ammo_origin, Vector2(w * k, 6)), Color(AMMO_COLOR, 0.8))
 	else:
 		for i in max_ammo:
-			var r := Rect2(ammo_origin + Vector2(i * 20.0, 0), Vector2(14, 6))
-			_canvas.draw_rect(r, Color(AMMO_COLOR, 0.9) if i < ammo else Color(AMMO_COLOR, 0.15))
-	# Flechas de delación
-	for r in reveals:
-		var c := Color(REVEAL_COLOR, r["alpha"])
-		if r["on_screen"]:
-			_canvas.draw_arc(r["pos"], 16.0, 0.0, TAU, 32, c, 1.6, true)
-			_canvas.draw_arc(r["pos"], 26.0, 0.0, TAU, 32, Color(c, c.a * 0.4), 1.0, true)
-		else:
-			var dir := Vector2.from_angle(r["angle"])
-			var tip: Vector2 = r["pos"]
-			var pts := PackedVector2Array([tip, tip - dir * 18.0 + dir.orthogonal() * 9.0, tip - dir * 12.0, tip - dir * 18.0 - dir.orthogonal() * 9.0])
-			_canvas.draw_colored_polygon(pts, c)
+			_canvas.draw_rect(Rect2(ammo_origin + Vector2(i * 20.0, 0), Vector2(14, 6)), Color(AMMO_COLOR, 0.9) if i < ammo else Color(AMMO_COLOR, 0.15))
+	# Misiles disponibles (a la derecha de la munición)
+	var ammo_width := special_ammo * 12.0 if special_ammo > 0 else 3 * 20.0
+	for i in missiles:
+		Art.glyph(_canvas, PU.Kind.REDEEMER, ammo_origin + Vector2(ammo_width + 18.0 + i * 22.0, 3), 8.0, Art.color_of(PU.Kind.REDEEMER))
+	# Efectos activos con su tiempo restante
+	var fx_origin := ammo_origin + Vector2(14, -34)
+	for i in effects.size():
+		var e: Dictionary = effects[i]
+		var c := fx_origin + Vector2(i * 36.0, 0)
+		Art.icon(_canvas, e["kind"], c, 13.0, _t)
+		if e["left"] >= 0.0 and e["total"] > 0.0:
+			var k: float = clampf(e["left"] / e["total"], 0.0, 1.0)
+			_canvas.draw_rect(Rect2(c + Vector2(-12, 17), Vector2(24, 3)), Color(Art.color_of(e["kind"]), 0.2))
+			_canvas.draw_rect(Rect2(c + Vector2(-12, 17), Vector2(24 * k, 3)), Art.color_of(e["kind"]))
 
 func _cell(pos: Vector2, fill: float, color: Color) -> void:
 	_canvas.draw_rect(Rect2(pos, CELL), Color(color, 0.14))
 	if fill > 0.0:
 		_canvas.draw_rect(Rect2(pos, Vector2(CELL.x * fill, CELL.y)), Color(color, 0.9))
 	_canvas.draw_rect(Rect2(pos, CELL), Color(color, 0.5), false, 1.0)
+
+## Ranking en vivo (arriba a la derecha, bajo los controles de ventana).
+func _draw_ranking(vp: Vector2) -> void:
+	if ranking.is_empty():
+		return
+	var font := Style.font(600, 1)
+	var y := 64.0
+	for r in ranking:
+		var col := Color(1, 1, 1, 0.95) if r["me"] else Color(Style.FG_MUTED, 0.7)
+		var name: String = str(r["name"]).to_upper()
+		var score := str(r["score"])
+		var sw := font.get_string_size(score, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+		_canvas.draw_string(font, Vector2(vp.x - MARGIN - 190, y), name, HORIZONTAL_ALIGNMENT_LEFT, 140, 14, col)
+		_canvas.draw_string(font, Vector2(vp.x - MARGIN - sw, y), score, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, col)
+		y += 22.0
+
+## Flechas (o aros, si se ve el punto) hacia los ruidos, con el icono de su tipo.
+func _draw_reveals() -> void:
+	for r in reveals:
+		var shot: bool = r["kind"] == NOISE_SHOT
+		var c := Color(SHOT_COLOR if shot else CRASH_COLOR, r["alpha"])
+		var pos: Vector2 = r["pos"]
+		if r["on_screen"]:
+			_canvas.draw_arc(pos, 16.0, 0.0, TAU, 32, Color(c, c.a * 0.5), 1.2, true)
+			_noise_icon(pos, shot, c)
+		else:
+			var dir := Vector2.from_angle(r["angle"])
+			var pts := PackedVector2Array([pos, pos - dir * 16.0 + dir.orthogonal() * 8.0, pos - dir * 11.0, pos - dir * 16.0 - dir.orthogonal() * 8.0])
+			_canvas.draw_colored_polygon(pts, c)
+			_noise_icon(pos - dir * 32.0, shot, c)
+
+## Disparo = mira; choque = estallido.
+func _noise_icon(c: Vector2, shot: bool, col: Color) -> void:
+	if shot:
+		_canvas.draw_arc(c, 6.0, 0.0, TAU, 20, col, 1.4, true)
+		for k in 4:
+			var d := Vector2.from_angle(k * PI / 2.0)
+			_canvas.draw_line(c + d * 3.0, c + d * 10.0, col, 1.4, true)
+	else:
+		for k in 8:
+			var d := Vector2.from_angle(k * PI / 4.0 + 0.2)
+			var inner := 2.5
+			var outer := 9.0 if k % 2 == 0 else 6.0
+			_canvas.draw_line(c + d * inner, c + d * outer, col, 1.6, true)

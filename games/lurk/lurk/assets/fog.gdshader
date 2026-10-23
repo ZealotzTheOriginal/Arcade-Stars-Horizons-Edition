@@ -4,10 +4,14 @@ shader_type canvas_item;
 //   lights[i]   = (x, y, radio, intensidad)     visión de la nave, destellos…
 //   seg_a[i]/seg_b[i] = extremos de un tramo de luz (túneles de los proyectiles); seg_a.z = radio,
 //                       seg_a.w = intensidad
+//   glows[i]    = luces que proyectan SOMBRAS de los asteroides (resplandor de la Sobrecarga);
+//                 occ[i] = asteroides (x, y, radio) que las tapan
 // El borde de cada luz es suave y "respira" un poco con ruido para que no parezca un círculo perfecto.
 
 const int MAX_LIGHTS = 24;
 const int MAX_SEGS = 64;
+const int MAX_GLOWS = 4;
+const int MAX_OCC = 24;
 
 uniform vec2 screen_size = vec2(1280.0, 720.0);
 uniform vec4 lights[MAX_LIGHTS];
@@ -15,6 +19,10 @@ uniform int light_count = 0;
 uniform vec4 seg_a[MAX_SEGS];
 uniform vec4 seg_b[MAX_SEGS];
 uniform int seg_count = 0;
+uniform vec4 glows[MAX_GLOWS];
+uniform int glow_count = 0;
+uniform vec3 occ[MAX_OCC];
+uniform int occ_count = 0;
 uniform float edge = 0.45;    // fracción del radio que ocupa el degradado del borde
 
 // Hash sin seno ("hash without sine", D. Hoskins): fract(sin(x)) pierde precisión en algunas GPU y
@@ -46,6 +54,27 @@ float segment_light(vec2 p, vec4 a, vec4 b) {
 	return (1.0 - smoothstep(a.z * 0.35, a.z, d)) * k;
 }
 
+// Luz con sombras: los asteroides entre la luz y el punto la tapan.
+float shadowed_light(vec2 p, vec4 l) {
+	vec2 rel = p - l.xy;
+	float dp = length(rel);
+	float base = (1.0 - smoothstep(l.z * 0.5, l.z, dp)) * l.w;
+	if (base <= 0.0) return 0.0;
+	vec2 dir = rel / max(dp, 0.001);
+	float lit = 1.0;
+	for (int i = 0; i < MAX_OCC; i++) {
+		if (i >= occ_count) break;
+		vec2 c = occ[i].xy - l.xy;
+		float r = occ[i].z;
+		float along = dot(c, dir);
+		if (along < 0.0 || along > dp) continue;
+		float perp = length(c - dir * along);
+		float soft = 5.0 + (dp - along) * 0.05;
+		lit = min(lit, smoothstep(r - soft, r + soft, perp));
+	}
+	return base * lit;
+}
+
 void fragment() {
 	vec2 p = UV * screen_size;
 	// Pequeña ondulación del borde (niebla viva)
@@ -59,6 +88,10 @@ void fragment() {
 	for (int i = 0; i < MAX_SEGS; i++) {
 		if (i >= seg_count) break;
 		light = max(light, segment_light(q, seg_a[i], seg_b[i]));
+	}
+	for (int i = 0; i < MAX_GLOWS; i++) {
+		if (i >= glow_count) break;
+		light = max(light, shadowed_light(q, glows[i]));
 	}
 	COLOR = vec4(0.0, 0.0, 0.0, 1.0 - clamp(light, 0.0, 1.0));
 }

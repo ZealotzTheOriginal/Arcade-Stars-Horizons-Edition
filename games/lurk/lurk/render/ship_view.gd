@@ -22,6 +22,10 @@ var aim := 0.0
 var thrust_dir := Vector2.ZERO    # dirección del empuje en el mundo (cero = motor apagado)
 var alpha := 1.0
 var invulnerable := false    # parpadea mientras dura la invulnerabilidad del respawn
+var shield := false          # burbuja del Escudo de Colisión
+var overload := false        # aura de la Sobrecarga (el resplandor con sombras va aparte)
+var cloak := 0.0             # Espectro: 0 visible, 1 casi invisible (con reflejo)
+var _fx: Node2D              # burbuja y aura, encima del casco
 var _t := 0.0
 var _hull: Node2D
 var _flame_pivot: Node2D
@@ -43,6 +47,9 @@ func _ready() -> void:
 	_hull = Node2D.new()
 	_hull.draw.connect(_draw_hull)
 	add_child(_hull)
+	_fx = Node2D.new()
+	_fx.draw.connect(_draw_fx)
+	add_child(_fx)
 	set_color(color)
 
 func set_color(c: Color) -> void:
@@ -61,9 +68,14 @@ func _process(delta: float) -> void:
 		_flame_pivot.rotation = lerp_angle(_flame_pivot.rotation, thrust_dir.angle() + PI, minf(1.0, delta * 18.0))
 	_t += delta
 	var blink := 0.45 + 0.55 * absf(sin(_t * 14.0)) if invulnerable else 1.0
-	_flame_mat.set_shader_parameter("power", _power * alpha)
+	_flame_mat.set_shader_parameter("power", _power * alpha * (1.0 - cloak * 0.85))
 	_flame_pivot.visible = _power > 0.01
-	modulate.a = alpha * blink
+	# Espectro: el casco tiembla un poco (reflejo) y casi desaparece
+	_hull.position = Vector2(sin(_t * 31.0), cos(_t * 27.0)) * 1.5 * cloak
+	modulate.a = alpha * blink * (1.0 - cloak * 0.75)
+	_fx.visible = shield or overload
+	if _fx.visible:
+		_fx.queue_redraw()
 
 func _draw_hull() -> void:
 	var hull := PackedVector2Array(HULL)
@@ -86,3 +98,15 @@ func _draw_hull() -> void:
 	# Luces de punta de ala
 	_hull.draw_circle(Vector2(-6, -16), 1.3, Color(Neon.WHITE, 0.9), true, -1.0, true)
 	_hull.draw_circle(Vector2(-6, 16), 1.3, Color(Neon.WHITE, 0.9), true, -1.0, true)
+
+func _draw_fx() -> void:
+	if shield:
+		var k := 0.55 + 0.25 * sin(_t * 5.0)
+		_fx.draw_arc(Vector2.ZERO, 27.0, 0.0, TAU, 48, Color("#A6C8FF", k), 1.6, true)
+		_fx.draw_arc(Vector2.ZERO, 30.0, _t * 1.5, _t * 1.5 + PI * 0.6, 20, Color("#A6C8FF", k * 0.6), 1.2, true)
+		_fx.draw_arc(Vector2.ZERO, 30.0, _t * 1.5 + PI, _t * 1.5 + PI * 1.6, 20, Color("#A6C8FF", k * 0.6), 1.2, true)
+	if overload:
+		for i in 3:
+			var a := _t * (2.0 + i) + i * 2.1
+			_fx.draw_arc(Vector2.ZERO, 22.0 + i * 5.0, a, a + PI * 0.5, 16, Color("#FFE066", 0.7), 1.4, true)
+		Neon.glow_circle(_fx, Vector2.ZERO, 5.0 + sin(_t * 9.0), Color("#FFF5C2"), 1.6)

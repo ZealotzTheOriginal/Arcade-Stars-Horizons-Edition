@@ -4,17 +4,19 @@ extends Node2D
 
 const Neon = preload("neon.gd")
 
-enum Kind { SPARK, SHIP_HIT, EXPLOSION, BUMP, SPAWN }
+enum Kind { SPARK, SHIP_HIT, EXPLOSION, BUMP, SPAWN, BLAST }
 
 var kind := Kind.SPARK
 var color := Color.WHITE
 var life := 0.5
+var radius := 100.0    # BLAST: radio de la onda expansiva
 var _t := 0.0
 var _shards: Array = []    # [dirección, velocidad, largo, giro]
 
-func setup(k: Kind, c: Color) -> void:
+func setup(k: Kind, c: Color, blast_radius: float = 100.0) -> void:
 	kind = k
 	color = c
+	radius = blast_radius
 	match k:
 		Kind.SPARK:
 			life = 0.35
@@ -29,6 +31,9 @@ func setup(k: Kind, c: Color) -> void:
 			life = 0.4
 		Kind.SPAWN:
 			life = 0.7
+		Kind.BLAST:
+			life = 0.9
+			_make_shards(int(clampf(radius / 8.0, 10.0, 30.0)), radius * 0.6, radius * 1.6, 5.0, 16.0)
 
 func _make_shards(count: int, vmin: float, vmax: float, lmin: float, lmax: float) -> void:
 	for i in count:
@@ -62,5 +67,17 @@ func _draw() -> void:
 				draw_line(p - dir * s[2] * 0.5, p + dir * s[2] * 0.5, Color(color, fade), 1.6, true)
 		Kind.BUMP:
 			draw_arc(Vector2.ZERO, 18.0 + 40.0 * k, 0.0, TAU, 32, Color(color, fade * 0.7), 1.5, true)
+		Kind.BLAST:
+			# Onda expansiva hasta el radio de daño, bola de fuego y metralla
+			var ring := radius * ease(k, 0.35)
+			draw_arc(Vector2.ZERO, ring, 0.0, TAU, 64, Color(color, fade * 0.9), 2.4, true)
+			draw_arc(Vector2.ZERO, ring * 0.82, 0.0, TAU, 56, Color(Neon.WHITE, fade * 0.35), 1.2, true)
+			if k < 0.35:
+				var core := 1.0 - k / 0.35
+				draw_circle(Vector2.ZERO, radius * 0.45 * (1.0 - core * 0.4), Color(color, 0.25 * core), true, -1.0, true)
+				Neon.glow_circle(self, Vector2.ZERO, radius * 0.12 * core + 2.0, Color(Neon.WHITE, core), 1.6)
+			for s in _shards:
+				var p: Vector2 = s[0] * s[1] * _t * (1.0 - k * 0.4)
+				draw_line(p, p + (s[0] as Vector2) * s[2] * fade, Color(color, fade), 1.5, true)
 		Kind.SPAWN:
 			draw_arc(Vector2.ZERO, 70.0 * (1.0 - ease(k, 0.5)) + 16.0, 0.0, TAU, 40, Color(color, fade), 1.6, true)

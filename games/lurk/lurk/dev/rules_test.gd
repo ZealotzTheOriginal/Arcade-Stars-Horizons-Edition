@@ -41,10 +41,10 @@ func _initialize() -> void:
 	_input_for(logic, 1, 0.0)
 	logic.tick(1.0 / Config.TICK_RATE)
 	_check("shot spends ammo", logic.players[2]["ammo"] == 2)
-	_check("shooter revealed", logic.reveals.has(2))
+	_check("shooter makes noise", logic.noises.any(func(n): return n["src"] == 2 and n["kind"] == Config.NOISE_SHOT))
 	_ticks(logic, 15)
 	_check("bullet hits for 1.5", is_equal_approx(logic.players[1]["ship"]["hp"], 1.5), str(logic.players[1]["ship"]["hp"]))
-	_check("victim sees shooter's reveal", logic.state_for(1)["rv"].size() == 3)
+	_check("victim hears the shot", logic.state_for(1)["nz"].size() >= 4)
 	_ticks(logic, 10)
 	_input_for(logic, 2, PI, true)
 	_input_for(logic, 1, 0.0)
@@ -81,7 +81,7 @@ func _initialize() -> void:
 	l2.tick(1.0 / Config.TICK_RATE)
 	_check("hard border crash kills", not l2.players[1]["alive"])
 	_check("nobody scores a self kill", l2.players[2]["score"] == 0)
-	_check("hard crash reveals", l2.reveals.has(1))
+	_check("hard crash makes noise", l2.noises.any(func(n): return n["src"] == 1 and n["kind"] == Config.NOISE_CRASH))
 
 	# Niebla: la nave 2 lejos no se ve; con un túnel de luz propio sí
 	var l3 = _setup()
@@ -97,7 +97,92 @@ func _initialize() -> void:
 		if not l3.state_for(1)["sh"].is_empty():
 			break
 	_check("own bullet tunnel reveals ship", not l3.state_for(1)["sh"].is_empty())
-	_check("rival does not see through my tunnel", l3.state_for(2)["as"].size() >= 0 and l3._sources(2)["segs"].is_empty())
+	_check("tunnels light for everyone", not l3._sources(2)["segs"].is_empty() or not l3.lights.is_empty())
 
+	_extra_checks()
 	print("RESULT: %s" % ("ALL PASSED" if failures == 0 else "%d FAILED" % failures))
 	quit(1 if failures else 0)
+
+## Power-ups, explosiones que esculpen asteroides, IA y puntuación.
+func _extra_checks() -> void:
+	const PU = preload("res://lurk/shared/powerups.gd")
+	const Shapes = preload("res://lurk/shared/shapes.gd")
+	# Solo un humano: aparece la IA y no hay puntos
+	var solo = Logic.new({}, [1])
+	_check("bot joins a solo player", solo.players.has(Logic.BOT_ID) and not solo.scoring)
+	solo.add_player(2)
+	_check("bot leaves when a 2nd human joins", not solo.players.has(Logic.BOT_ID) and solo.scoring)
+	solo.players[1]["score"] = 50
+	solo.remove_player(2)
+	_check("back to solo: bot returns, scores reset", solo.players.has(Logic.BOT_ID) and solo.players[1]["score"] == 0 and not solo.scoring)
+	for i in 90:
+		_input_for(solo, 1, 0.0)
+		solo.tick(1.0 / Config.TICK_RATE)
+	_check("bot simulates without errors", solo.players[Logic.BOT_ID]["ship"]["pos"] != Vector2.ZERO)
+
+	# Power-ups
+	var l = _setup()
+	l._apply_powerup(1, PU.Kind.ARMOR)
+	l._apply_powerup(1, PU.Kind.ARMOR)
+	l._apply_powerup(1, PU.Kind.ARMOR)
+	l._apply_powerup(1, PU.Kind.ARMOR)
+	_check("armor stacks up to 9", is_equal_approx(l.players[1]["armor"], 9.0))
+	l._damage(1, 1.5, 2)
+	_check("armor absorbs before health", is_equal_approx(l.players[1]["armor"], 7.5) and is_equal_approx(l.players[1]["ship"]["hp"], 3.0))
+	l._apply_powerup(2, PU.Kind.HEAVY)
+	_input_for(l, 2, PI, true)
+	_input_for(l, 1, 0.0)
+	l.tick(1.0 / Config.TICK_RATE)
+	_check("heavy weapon fires a fan of 3", l.bullets.size() == 3)
+	l._apply_powerup(2, PU.Kind.SPECTRE)
+	l.players[2]["spectre_flash_until"] = 0.0
+	_check("spectre hides from rivals at distance", not l.can_see(1, 2))
+	l._apply_powerup(1, PU.Kind.SHIELD)
+	var hp_before: float = l.players[1]["ship"]["hp"]
+	l.players[1]["armor"] = 0.0
+	l._impact_damage(1, Config.SHIP_MAX_SPEED, 0)
+	_check("shield blocks collision damage", is_equal_approx(l.players[1]["ship"]["hp"], hp_before))
+
+	# Misil: se lanza, la nave queda quieta, explota al detonar y daña al emisor si está cerca
+	var lm = _setup()
+	lm._apply_powerup(1, PU.Kind.REDEEMER)
+	seqs[1] += 1
+	lm.handle_input(1, {"s": seqs[1], "m": Vector2.ZERO, "a": 0.0, "ms": true})
+	_input_for(lm, 2, PI)
+	lm.tick(1.0 / Config.TICK_RATE)
+	_check("missile launched", lm.missiles.size() == 1 and lm.players[1]["missiles"] == 0)
+	_ticks(lm, 3)
+	_check("ship frozen while steering", lm.players[1]["ship"]["frozen"])
+	_input_for(lm, 1, 0.0, true)
+	_input_for(lm, 2, PI)
+	lm.tick(1.0 / Config.TICK_RATE)
+	_check("missile detonates on click", lm.missiles.is_empty())
+	_check("blast hurts its own launcher nearby", lm.players[1]["ship"]["hp"] < Config.MAX_HP)
+
+	# Explosión que esculpe un asteroide
+	var lc = _setup()
+	lc.asteroids = [{"id": 1, "pos": Vector2(2000, 2000), "vel": Vector2.ZERO, "points": Shapes.generate(1, 120.0)["points"],
+		"r": 120.0, "gen_r": 120.0, "rot": 0.0, "spin": 0.0, "ver": 0, "noise_at": 0.0}]
+	lc._rebuild_grid()
+	var area_before := Shapes.area(lc.asteroids[0]["points"])
+	lc._explode(Vector2(2000 + 110, 2000), Config.EXPLOSIVE_RADIUS, 0.0, 0.0, 1, Config.EXPLOSIVE_CARVE)
+	var area_after := 0.0
+	for a in lc.asteroids:
+		area_after += Shapes.area(a["points"])
+	_check("explosion carves the rock", area_after < area_before - 500.0 and lc.asteroids[0]["ver"] > 0, "%d -> %d" % [area_before, area_after])
+	lc._explode(Vector2(2000, 2000), 400.0, 0.0, 0.0, 1, 400.0)
+	_check("big blast pulverizes it", lc.asteroids.is_empty())
+
+	# Caja de la Sobrecarga: tres balas la rompen y libera el power-up
+	var lo = _setup()
+	lo.crate["pos"] = Vector2(1200, 1000)
+	lo.players[2]["ship"]["pos"] = Vector2(2000, 2000)
+	for k in 3:
+		_input_for(lo, 1, 0.0, true)
+		_input_for(lo, 2, PI)
+		lo.tick(1.0 / Config.TICK_RATE)
+		_ticks(lo, 12)
+	_check("crate breaks after 3 hits", not lo.crate["alive"] and lo.pickups.any(func(p): return p["kind"] == PU.Kind.OVERLOAD))
+	lo._apply_powerup(1, PU.Kind.OVERLOAD)
+	_ticks(lo, 1)
+	_check("overload: special ammo and fast ship", lo.players[1]["special_ammo"] == Config.OVERLOAD_AMMO and lo.players[1]["ship"]["overload"])

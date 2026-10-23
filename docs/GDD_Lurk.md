@@ -38,3 +38,10 @@ Aclaraciones del diseño tras la primera revisión. Prevalecen sobre las seccion
 ### 8.6. Arte y sonido
 * **Vector neon** con arte propio: naves y power-ups con vectores detallados; shaders llamativos (fuego del cohete; la Sobrecarga ilumina el entorno con un efecto de gas y proyecta sombras de los asteroides).
 * Sonido: packs de **Kenney (CC0)**. Sin música por ahora; **ambiente espacial** de fondo.
+
+### 8.7. Segunda ronda de decisiones (24/10/2026)
+* **Luz:** la nave ilumina solo para su piloto; **las balas iluminan su túnel para todos**, igual que los destellos de impactos y explosiones, los misiles y el resplandor de la Sobrecarga.
+* **Ruido:** dos indicadores con icono propio: **disparo** (mira) y **choque** (estallido). Los choques fuertes de naves y **los choques entre asteroides** también suenan; estos últimos solo se oyen de cerca (1800 px).
+* **Explosivos y asteroides:** la Carga Explosiva (09) y el misil **esculpen** los asteroides: el cráter tiene borde irregular y, si la roca se parte, los trozos se separan; los fragmentos diminutos se desintegran. Las balas normales no les hacen nada. El misil, por su radio, alcanza varios asteroides.
+* **Controles del misil:** clic derecho lo lanza (si tienes uno); se guía con el ratón; clic izquierdo lo detona donde esté.
+* **Sobrecarga:** su caja aguanta tres balas; la Sobrecarga liberada deriva despacio y, al cogerla, la caja reaparece 45 s después en otro sitio.

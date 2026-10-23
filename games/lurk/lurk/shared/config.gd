@@ -71,3 +71,63 @@ const FLASH_TIME := 0.5
 ## Lado del mapa para `players` jugadores: fijo hasta BASE_PLAYERS; después crece con el área.
 static func map_size_for(players: int) -> float:
 	return MAP_BASE * sqrt(maxf(players, BASE_PLAYERS) / float(BASE_PLAYERS))
+
+# ── Ruido (delación) ─────────────────────────────────────
+const HEARING_RANGE := 1800.0        # choques entre asteroides: se "oyen" hasta aquí
+const ROCK_NOISE_MIN_SPEED := 3.0
+const ROCK_NOISE_COOLDOWN := 3.0
+const NOISE_SHOT := 0
+const NOISE_CRASH := 1
+
+# ── Explosiones ──────────────────────────────────────────
+const BLAST_FLASH_TIME := 0.8
+const DEBRIS_SPEED := 28.0           # empuje de los trozos de una roca partida
+
+# ── Power-ups ────────────────────────────────────────────
+const POWERUP_BASE := 5              # en el mapa con hasta BASE_PLAYERS jugadores (+1 por jugador extra)
+const POWERUP_RADIUS := 16.0
+const POWERUP_RESPAWN := 15.0
+const POWERUP_SPACING := 1300.0      # siempre alejados entre sí
+const VISOR_MULT := 1.25
+const RADAR_INTERVAL := 4.0
+const RADAR_JITTER := 140.0          # posición aproximada
+const RADAR_SHOW := 1.6
+const HEAVY_SPREAD := 0.2            # radianes entre las balas del abanico
+const MISSILE_SPEED := 560.0
+const MISSILE_TURN := 2.6            # rad/s: gira hacia el ratón con suavidad (difícil a propósito)
+const MISSILE_RADIUS := 6.0
+const MISSILE_LIGHT := 170.0
+const MISSILE_BLAST := 240.0
+const MISSILE_DAMAGE_INNER := 3.0    # mitad interior del radio
+const MISSILE_DAMAGE_OUTER := 1.5
+const MISSILE_CARVE := 180.0
+const SHIELD_TIME := 30.0
+const SHIELD_BULLET_DAMAGE := 1.0
+const ARMOR_GAIN := 3.0
+const ARMOR_MAX := 9.0
+const SPECTRE_TIME := 30.0
+const SPECTRE_NEAR := 110.0          # tan cerca, un rival ve el reflejo
+const SPECTRE_FIRE_FLASH := 0.6      # disparar deja ver el reflejo un instante
+const EXPLOSIVE_RADIUS := 80.0
+const EXPLOSIVE_DAMAGE := 0.75
+const EXPLOSIVE_CARVE := 70.0
+const PSIONIC_TIME := 5.0
+const PSIONIC_GHOSTS := 3
+const OVERLOAD_TIME := 10.0
+const OVERLOAD_MAX_SPEED := 860.0    # doble de velocidad
+const OVERLOAD_ACCEL := 1150.0
+const OVERLOAD_DAMPING := 0.22       # poca tracción: derrapa mucho
+const OVERLOAD_AMMO := 10
+const OVERLOAD_BOUNCES := 3
+const OVERLOAD_BULLET_DAMAGE := 0.5
+const OVERLOAD_GLOW := 280.0         # luz de la nave (visible en la niebla, con sombras)
+const OVERLOAD_VISIBLE := 1800.0
+const CRATE_HP := 4.5                # tres balas normales
+const CRATE_RADIUS := 26.0
+const CRATE_RESPAWN := 45.0
+const OVERLOAD_DRIFT := 35.0
+
+# ── Puntuación ───────────────────────────────────────────
+const SCORE_GEM := 10
+const SCORE_POWERUP := 25
+const SCORE_KILL := 100
