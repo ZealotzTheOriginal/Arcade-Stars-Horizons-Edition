@@ -1,0 +1,12 @@
+{
+	"id": "lurk",
+	"name": "Lurk",
+	"version": "0.1.0",
+	"api_version": 2,
+	"scene": "res://lurk/lurk.tscn",
+	"min_players": 1,
+	"max_players": 30,
+	"realtime": true,
+	"join_in_progress": true,
+	"settings": []
+}

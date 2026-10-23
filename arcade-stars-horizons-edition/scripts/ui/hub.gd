@@ -330,7 +330,8 @@ func _room_card(r: Dictionary) -> Control:
 	info.add_child(d)
 	var b := Button.new()
 	b.text = "JOIN"
-	b.disabled = r["in_game"] or r["players"] >= r["max"] or not Backend.is_online()
+	var joinable_in_game: bool = GameRegistry.allows_join_in_progress(r["game_id"]) and GameLoader.is_installed(r["game_id"])
+	b.disabled = (r["in_game"] and not joinable_in_game) or r["players"] >= r["max"] or not Backend.is_online()
 	b.pressed.connect(func(): Net.join_room(r["id"]))
 	h.add_child(b)
 	return card

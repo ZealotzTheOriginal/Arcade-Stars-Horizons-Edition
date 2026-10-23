@@ -140,7 +140,7 @@ func _pack_info(id: String, path: String) -> Dictionary:
 
 func _read_manifest(id: String, path: String, key: String) -> Dictionary:
 	var manifest: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://%s/manifest.json" % id))
-	if not (manifest is Dictionary) or manifest.get("id") != id or int(manifest.get("api_version", -1)) != GameRegistry.API_VERSION:
+	if not (manifest is Dictionary) or manifest.get("id") != id or not (int(manifest.get("api_version", -1)) in range(1, GameRegistry.API_VERSION + 1)):
 		push_warning("Invalid or incompatible manifest in " + path)
 		return {}
 	var scene: String = manifest.get("scene", "")
@@ -170,5 +170,6 @@ func _back_to_hub() -> void:
 	var cur := get_tree().current_scene
 	if cur and cur.scene_file_path != HUB_SCENE:
 		_ctx = null
+		WindowChrome.set_fullscreen(false)
 		WindowChrome.set_mode(WindowChrome.Mode.BAR)
 		get_tree().change_scene_to_file(HUB_SCENE)

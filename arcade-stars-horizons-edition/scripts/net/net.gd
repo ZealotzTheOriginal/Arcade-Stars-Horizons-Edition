@@ -8,6 +8,7 @@ signal connected_to_room
 signal left_room(reason: String)
 signal game_starting(game_id: String, settings: Dictionary)
 signal game_view(view: Dictionary)
+signal game_state(state: Dictionary)    # tiempo real: estado por jugador a ~15-30 Hz
 signal returned_to_room
 signal server_error(message: String)
 
@@ -119,6 +120,10 @@ func send_installed_games() -> void:
 func send_game_ready() -> void:
 	Backend.send({"t": "game_ready"})
 
+## Tiempo real: entradas continuas (no se reenvía vista; llegan estados `game_state`).
+func send_game_input(payload: Dictionary) -> void:
+	Backend.send({"t": "game_input", "p": payload})
+
 func send_game_action(payload: Dictionary) -> void:
 	Backend.send({"t": "game_action", "payload": payload})
 
@@ -143,6 +148,8 @@ func _on_message(msg: Dictionary) -> void:
 			game_starting.emit(msg["game_id"], msg["settings"])
 		"game_view":
 			game_view.emit(msg["view"])
+		"game_state":
+			game_state.emit(msg["s"])
 		"game_returned":
 			in_game = false
 			returned_to_room.emit()

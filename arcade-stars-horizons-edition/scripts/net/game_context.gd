@@ -6,9 +6,11 @@ extends RefCounted
 ## Interfaz funcional duplicada en games/<id>/<id>/dev/mock_context.gd para probar el juego solo.
 
 signal view_received(view: Dictionary)
+signal state_received(state: Dictionary)    # API 2: tiempo real
 
 func _init() -> void:
 	Net.game_view.connect(func(v): view_received.emit(v))
+	Net.game_state.connect(func(s): state_received.emit(s))
 
 func my_id() -> int:
 	return Net.my_id()
@@ -42,6 +44,17 @@ func send_ready() -> void:
 
 func send_action(payload: Dictionary) -> void:
 	Net.send_game_action(payload)
+
+## API 2: entradas continuas de un juego en tiempo real.
+func send_input(payload: Dictionary) -> void:
+	Net.send_game_input(payload)
+
+## API 2: pantalla completa (al volver al hub se restaura la ventana del launcher).
+func set_fullscreen(enabled: bool) -> void:
+	WindowChrome.set_fullscreen(enabled)
+
+func is_fullscreen() -> bool:
+	return WindowChrome.is_fullscreen()
 
 func back_to_room() -> void:
 	Net.return_to_room()

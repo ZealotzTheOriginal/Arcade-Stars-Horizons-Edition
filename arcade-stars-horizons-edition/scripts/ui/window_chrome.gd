@@ -61,7 +61,7 @@ func set_mode(m: Mode) -> void:
 func _process(_delta: float) -> void:
 	_frame_mat.set_shader_parameter("window_px", Vector2(get_window().size))
 	# Sin transparencia disponible (Linux sin compositor) las esquinas recortadas se verían negras
-	var radius := CORNER_RADIUS if DisplayServer.is_window_transparency_available() else 0.0
+	var radius := CORNER_RADIUS if DisplayServer.is_window_transparency_available() and not is_fullscreen() else 0.0
 	_frame_mat.set_shader_parameter("radius_px", radius * get_window().content_scale_factor)
 
 # ── Tamaño fijo ──────────────────────────────────────────
@@ -117,6 +117,23 @@ func _place_window(size: Vector2i, center: Vector2i = Vector2i(-1, -1)) -> void:
 	DisplayServer.window_set_position(pos)
 	win.min_size = size
 	win.max_size = size
+
+## Pantalla completa (la piden los juegos; al volver al hub se restaura la ventana del launcher).
+func set_fullscreen(enabled: bool) -> void:
+	if enabled == is_fullscreen():
+		return
+	var win := get_window()
+	if enabled:
+		win.min_size = Vector2i.ZERO    # los límites del tamaño fijo impedirían ocupar la pantalla
+		win.max_size = Vector2i.ZERO
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	else:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		_place_window(_launcher_size())
+
+func is_fullscreen() -> bool:
+	var m := DisplayServer.window_get_mode()
+	return m == DisplayServer.WINDOW_MODE_FULLSCREEN or m == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
 
 func _on_dpi_changed() -> void:
 	get_window().content_scale_factor = ui_scale()

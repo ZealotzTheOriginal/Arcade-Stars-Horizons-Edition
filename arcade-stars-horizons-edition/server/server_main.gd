@@ -7,11 +7,11 @@ extends Node
 const DEFAULT_PORT := 9080
 ## Versión mínima del launcher aceptada. Súbela cuando cambie el protocolo: los clientes antiguos
 ## reciben el error "outdated" y el hub les obliga a actualizar.
-const MIN_LAUNCHER_VERSION := "0.0.0"
+const MIN_LAUNCHER_VERSION := "1.4.0"
 const MAX_CONNECTIONS := 500
 const MAX_ROOMS := 200
 const MAX_PACKET := 8192
-const MAX_MSG_PER_SECOND := 40
+const MAX_MSG_PER_SECOND := 90    # los juegos en tiempo real envían ~30 entradas/s
 const HELLO_TIMEOUT := 10.0
 const IDLE_TIMEOUT := 60.0
 const PRESENCE_INTERVAL := 0.5
@@ -25,7 +25,8 @@ var _peer := WebSocketMultiplayerPeer.new()
 var _db: SupabaseClient
 ## peer_id -> { user_id, nickname, room_id, games, authed, verifying, connected_at, last_seen, msg_count, last_nick_change }
 var _sessions: Dictionary = {}
-## room_id -> { id, name, game_id, host_id, settings, members, colors, in_game, logic, recorded }
+## room_id -> { id, name, game_id, host_id, settings, members, colors, in_game, logic, recorded,
+##             tick_acc, tick }   (tick_*: solo juegos en tiempo real)
 var _rooms: Dictionary = {}
 var _presence_dirty := false
 var _presence_timer := 0.0
@@ -80,6 +81,7 @@ func _process(delta: float) -> void:
 		_presence_dirty = false
 		_presence_timer = PRESENCE_INTERVAL
 		_broadcast_presence()
+	_tick_realtime(delta)
 	_housekeeping_timer -= delta
 	if _housekeeping_timer <= 0.0:
 		_housekeeping_timer = 1.0
@@ -169,6 +171,7 @@ func _on_packet(pid: int, bytes: PackedByteArray) -> void:
 				"game_start": _handle_game_start(pid)
 				"game_ready": _handle_game_ready(pid)
 				"game_action": _handle_game_action(pid, msg)
+				"game_input": _handle_game_input(pid, msg)
 				"game_back": _handle_game_back(pid)
 
 # ── Sesión ───────────────────────────────────────────────
@@ -323,15 +326,23 @@ func _handle_room_join(pid: int, msg: Dictionary) -> void:
 	if room.is_empty():
 		_send_error(pid, "Party not found")
 		return
-	if room["in_game"]:
+	var in_progress: bool = room["in_game"]
+	if in_progress and not (GameRegistry.allows_join_in_progress(room["game_id"]) and room["logic"]):
 		_send_error(pid, "Game already in progress")
 		return
 	if room["members"].size() >= GameRegistry.games[room["game_id"]]["max_players"]:
 		_send_error(pid, "Party is full")
 		return
+	if in_progress and not _has_game(pid, room["game_id"]):
+		_send_error(pid, "You are missing the game", "missing_game")
+		return
 	room["members"].append(pid)
 	room["colors"][pid] = _free_color(room)
 	_sessions[pid]["room_id"] = room["id"]
+	if in_progress:
+		# Entrada a una partida en curso: la lógica añade al jugador y su cliente abre el juego
+		room["logic"].add_player(pid)
+		_send(pid, {"t": "game_started", "game_id": room["game_id"], "settings": room["settings"]})
 	_send_room_state(room)
 	_presence_dirty = true
 
@@ -425,6 +436,8 @@ func _handle_game_start(pid: int) -> void:
 	room["logic"] = logic_script.new(room["settings"], room["members"])
 	room["in_game"] = true
 	room["recorded"] = false
+	room["tick_acc"] = 0.0
+	room["tick"] = 0
 	for m in room["members"]:
 		_send(m, {"t": "game_started", "game_id": room["game_id"], "settings": room["settings"]})
 	_send_room_state(room)
@@ -457,6 +470,32 @@ func _handle_game_back(pid: int) -> void:
 		_send(m, {"t": "game_returned"})
 	_send_room_state(room)
 	_presence_dirty = true
+
+## Entradas continuas de un juego en tiempo real (movimiento, apuntado, disparos…). La lógica
+## las encola y las aplica en su siguiente paso de simulación; no se responde nada aquí.
+func _handle_game_input(pid: int, msg: Dictionary) -> void:
+	var room := _room_of(pid)
+	if room.is_empty() or not room["in_game"] or room["logic"] == null or not (msg.get("p") is Dictionary):
+		return
+	if GameRegistry.is_realtime(room["game_id"]):
+		room["logic"].handle_input(pid, msg["p"])
+
+## Simulación a paso fijo de las partidas en tiempo real. Cada `SNAPSHOT_EVERY` pasos se envía a cada
+## jugador SU estado (`state_for`): la lógica decide qué ve cada uno (niebla de guerra autoritativa).
+func _tick_realtime(delta: float) -> void:
+	for room in _rooms.values():
+		if not room["in_game"] or room["logic"] == null or not GameRegistry.is_realtime(room["game_id"]):
+			continue
+		var logic = room["logic"]
+		var dt: float = 1.0 / logic.TICK_RATE
+		room["tick_acc"] = minf(room["tick_acc"] + delta, dt * 5.0)    # sin espiral de la muerte tras un parón
+		while room["tick_acc"] >= dt:
+			room["tick_acc"] -= dt
+			logic.tick(dt)
+			room["tick"] += 1
+			if room["tick"] % logic.SNAPSHOT_EVERY == 0:
+				for m in room["members"]:
+					_send(m, {"t": "game_state", "s": logic.state_for(m)})
 
 func _broadcast_view(room: Dictionary) -> void:
 	var view: Dictionary = room["logic"].view()

@@ -5,8 +5,12 @@ class_name GameRegistry
 ## Cliente: lo recibe del servidor en `welcome` (y lo cachea en user://) con `set_catalog`.
 ## El catálogo no incluye el código del juego: la UI vive en un .pck y la lógica en el servidor.
 
-## Versión del contrato hub <-> juego (GameContext). Debe coincidir con manifest.json del juego.
-const API_VERSION := 1
+## Versión del contrato hub <-> juego (GameContext). Un juego declara la que necesita en su
+## manifest.json (`api_version`); el hub acepta cualquiera hasta esta.
+##   1: turnos (vista completa tras cada acción)
+##   2: + tiempo real (entradas continuas, estado por jugador, pantalla completa)
+const API_VERSION := 2
+const MAX_PLAYERS := 32
 const SERVER_GAMES_DIR := "res://server/games"
 
 static var games: Dictionary = {}
@@ -32,12 +36,22 @@ static func _parse_manifest(id: String, text: String) -> Dictionary:
 		return {}
 	var min_p := int(m.get("min_players", 0))
 	var max_p := int(m.get("max_players", 0))
-	if min_p < 1 or max_p < min_p or max_p > 8:
+	if min_p < 1 or max_p < min_p or max_p > MAX_PLAYERS:
 		return {}
 	return {
 		"name": m["name"], "version": m["version"], "min_players": min_p, "max_players": max_p,
 		"settings": m.get("settings", []) if m.get("settings", []) is Array else [],
+		# Tiempo real: el servidor simula a paso fijo y envía a cada jugador su estado
+		"realtime": m.get("realtime", false) == true,
+		# Se puede entrar a una partida ya empezada (juegos sin final, p. ej. Lurk)
+		"join_in_progress": m.get("join_in_progress", false) == true,
 	}
+
+static func is_realtime(game_id: String) -> bool:
+	return games.get(game_id, {}).get("realtime", false)
+
+static func allows_join_in_progress(game_id: String) -> bool:
+	return games.get(game_id, {}).get("join_in_progress", false)
 
 static func is_valid_id(id: String) -> bool:
 	return RegEx.create_from_string("^[a-z0-9_]{2,32}$").search(id) != null

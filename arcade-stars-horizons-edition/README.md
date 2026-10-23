@@ -62,6 +62,16 @@ El hub solo monta `.pck` cuyo nombre coincide con un juego del catálogo y cuyo 
   `view()`, `remove_player(pid)`, `is_over()`, `results()`. El servidor la carga desde `server/games/<id>/` (generado con `tools/sync_server_logic`).
 - Para probarlo solo: abrir `games/<id>/` en Godot y ejecutar (usa `dev/mock_context.gd`).
 
+### Juegos en tiempo real (API 2, p. ej. Lurk)
+- `manifest.json`: `"api_version": 2`, `"realtime": true` y, si la partida no tiene final, `"join_in_progress": true`
+  (se puede entrar con la partida empezada). Hasta 32 jugadores.
+- `ctx` añade: señal `state_received(state)`, `send_input(payload)`, `set_fullscreen(bool)` e `is_fullscreen()`.
+- La lógica añade: constantes `TICK_RATE` y `SNAPSHOT_EVERY`, `add_player(pid)`, `handle_input(pid, payload)`, `tick(dt)`
+  y `state_for(pid)`. El servidor simula a paso fijo y envía a cada jugador **su** estado (lo que ve), así la
+  información oculta (niebla de guerra) nunca sale del servidor.
+- Código compartido entre servidor y cliente (física para la predicción): `res://<id>/shared/*.gd`, cargado con
+  rutas relativas desde `<id>_logic.gd`; `tools/sync_server_logic` también copia esa carpeta.
+
 ### Añadir un juego
 1. Crear `games/<id>/` (proyecto Godot con preset `pck`), con el contrato anterior y su `manifest.json`.
 2. `tools\release.ps1 -Games <id> -Publish` y después `git push` (ver *Publicar versiones*).
