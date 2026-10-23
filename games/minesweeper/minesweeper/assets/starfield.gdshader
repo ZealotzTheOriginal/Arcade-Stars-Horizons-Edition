@@ -1,9 +1,7 @@
 shader_type canvas_item;
-// Fondo cósmico anclado al ESCRITORIO: la ventana es un "portal" sobre un campo de estrellas fijo.
-// Al mover o redimensionar la ventana no se estira nada: se descubren otras zonas del campo.
-// Todo se calcula en píxeles físicos (nítido a cualquier escala) con borde antialiasado de 1 px.
+// Fondo cósmico: estrellas nítidas en píxeles físicos (borde antialiasado de 1 px), nebulosas que
+// destellan y viñeta suave. Va anclado a la ventana (el launcher tiene tamaño fijo).
 
-uniform vec2 window_origin = vec2(0.0);   // posición de la ventana en el escritorio (px)
 uniform vec2 window_px = vec2(1280.0, 720.0); // tamaño de la ventana (px físicos)
 uniform sampler2D noise_tex : repeat_enable, filter_linear;
 
@@ -66,7 +64,8 @@ float stars(vec2 p) {
 }
 
 void fragment() {
-	vec2 p = UV * window_px + window_origin;    // coordenadas de escritorio (px)
+	float inherited_alpha = COLOR.a;    // modulate heredado (p. ej. el fundido de entrada del hub)
+	vec2 p = UV * window_px;            // píxeles físicos de la ventana
 	vec3 col = void_color.rgb;
 
 	// Nebulosas que DESTELLAN: cada capa sube, se mantiene un instante y se apaga; en cada ciclo
@@ -89,5 +88,7 @@ void fragment() {
 	float v = smoothstep(1.25, 0.45, length(UV - 0.5) * 1.35);
 	col *= mix(0.8, 1.0, v);
 	col += (hash21(FRAGCOORD.xy) - 0.5) / 255.0;
-	COLOR = vec4(col, 1.0);
+	// Respetar el modulate: con alfa fija 1.0 el fondo aparecía opaco de golpe durante el fundido
+	// de entrada (el "cuadrado negro" al abrir el launcher).
+	COLOR = vec4(col, inherited_alpha);
 }

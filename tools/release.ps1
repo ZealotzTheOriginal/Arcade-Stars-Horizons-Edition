@@ -60,7 +60,7 @@ foreach ($id in $Games) {
     Copy-Item $pck $dir
     $asset = Join-Path $dir "$id.pck"
     $manifest.games[$id] = @{ version = $info.version; url = "$BaseUrl/$tag/$id.pck"; sha256 = (Get-Sha256 $asset); size = (Get-Item $asset).Length }
-    $tags += , @($tag, $asset, "$($info.name) $($info.version)")
+    $tags += , @($tag, $asset, "$($info.name) $($info.version)", $false)
     Write-Host "game  $id $($info.version)"
 }
 
@@ -78,7 +78,7 @@ if ($Launcher) {
     $zip = Join-Path $dir "ArcadeStars-$version-win64.zip"
     Compress-Archive -Path $exe -DestinationPath $zip
     $manifest.launcher = @{ version = $version; url = "$BaseUrl/$tag/ArcadeStars-$version-win64.zip"; sha256 = (Get-Sha256 $zip); size = (Get-Item $zip).Length }
-    $tags += , @($tag, $zip, "Launcher $version")
+    $tags += , @($tag, $zip, "Launcher $version", $true)
     Write-Host "launcher $version"
 }
 
@@ -91,7 +91,13 @@ $manifestPath = Join-Path $catalogDir "manifest.json"
 Write-Host "manifest -> $manifestPath"
 
 # ── Publicación ──
-# `gh` escribe en stderr cuando algo no existe; con $ErrorActionPreference = "Stop" eso abortaría el script.
+# Cada versión queda como release propia y PERMANENTE (launcher-x.y.z, game-<id>-x.y.z): nada se borra
+# al publicar otra, así que todas las versiones pasadas siguen descargables en la página de Releases.
+# Además se crea una etiqueta git en el commit actual con el mismo nombre (código fuente de esa versión).
+# Solo las releases del launcher se marcan como "Latest"; juegos y catálogo no.
+#
+# `gh` y `git` escriben en stderr en casos normales ("no existe"); con $ErrorActionPreference = "Stop"
+# eso abortaría el script, por eso esas consultas se hacen en modo "Continue".
 function Test-Release($tag) {
     $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
     gh release view $tag 2>&1 | Out-Null
@@ -99,13 +105,31 @@ function Test-Release($tag) {
     $ErrorActionPreference = $prev
     return $exists
 }
-function Publish-Release($tag, $file, $title) {
-    if (Test-Release $tag) { gh release upload $tag $file --clobber } else { gh release create $tag $file --title $title --notes $title }
+function Ensure-GitTag($tag) {
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    git rev-parse -q --verify "refs/tags/$tag" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { git tag $tag 2>&1 | Out-Null }
+    $remote = git ls-remote --tags origin "refs/tags/$tag" 2>$null
+    $ok = $true
+    if (-not $remote) { git push origin $tag 2>&1 | Out-Null; $ok = ($LASTEXITCODE -eq 0) }
+    $ErrorActionPreference = $prev
+    if (-not $ok) { throw "Could not push git tag $tag" }
+}
+function Publish-Release($tag, $file, $title, [bool]$latest, [bool]$sourceTag) {
+    $latestFlag = "--latest=" + $latest.ToString().ToLower()
+    if (Test-Release $tag) {
+        gh release upload $tag $file --clobber
+    } elseif ($sourceTag) {
+        Ensure-GitTag $tag
+        gh release create $tag $file --title $title --notes $title --verify-tag $latestFlag
+    } else {
+        gh release create $tag $file --title $title --notes $title $latestFlag
+    }
     if ($LASTEXITCODE -ne 0) { throw "gh failed for $tag" }
 }
 if ($Publish) {
-    foreach ($t in $tags) { Publish-Release $t[0] $t[1] $t[2] }
-    Publish-Release "catalog" $manifestPath "Catalog"
+    foreach ($t in $tags) { Publish-Release $t[0] $t[1] $t[2] $t[3] $true }
+    Publish-Release "catalog" $manifestPath "Catalog" $false $false
     Write-Host "Published. Next: git push (rebuilds the server)."
 } else {
     Write-Host "Dry run: nothing published (use -Publish)."

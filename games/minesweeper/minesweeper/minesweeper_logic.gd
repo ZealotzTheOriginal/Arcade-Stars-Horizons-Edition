@@ -1,5 +1,6 @@
 extends RefCounted
-## Reglas del Buscaminas competitivo por turnos (port de backend/app/games/minesweeper).
+## Reglas del Buscaminas por turnos (port de backend/app/games/minesweeper). Admite partida en
+## solitario: sin rivales, pisar una mina termina sin ganador y despejar el tablero es victoria.
 ## Solo lo instancia el servidor; los clientes reciben `view()`.
 
 const POINTS_PER_CELL := 5

@@ -6,7 +6,15 @@ var frame := 0
 var _star_shot := false
 
 func _initialize() -> void:
-	root.size = Vector2i(1280, 720)
+	# SHOT_SIZE=1024x576 para revisar el tamaño reducido del launcher.
+	pass
+
+## La ventana del launcher no es redimensionable: se coloca con WindowChrome (tamaño lógico × DPI).
+func _place() -> void:
+	var wanted := OS.get_environment("SHOT_SIZE")
+	var logical := Vector2(int(wanted.get_slice("x", 0)), int(wanted.get_slice("x", 1))) if wanted != "" else Vector2(1280, 720)
+	var chrome = root.get_node("WindowChrome")
+	chrome._place_window(Vector2i((logical * chrome.ui_scale()).round()))
 
 func _tab(name: String) -> void:
 	var b: Button = current_scene._tab_buttons[name]
@@ -18,6 +26,8 @@ func _process(_d: float) -> bool:
 	var net = root.get_node("Net")
 	var lobby = root.get_node("Lobby")
 	var updater = root.get_node("Updater")
+	if frame == 3:
+		_place()
 	if frame == 5:
 		change_scene_to_file("res://scenes/main.tscn")
 	if frame == 30:
@@ -34,7 +44,7 @@ func _process(_d: float) -> bool:
 		updater.manifest_changed.emit()
 	if frame == 40:
 		current_scene.get_child(0)._next_shoot = 0.0     # fuerza una estrella fugaz
-	if frame > 40 and frame < 300 and not _star_shot:
+	if frame > 40 and frame < 300 and not _star_shot and current_scene and current_scene.scene_file_path.ends_with("main.tscn"):
 		var sf = current_scene.get_child(0)
 		if not sf._shooting.is_empty() and sf._t - sf._shooting[0]["start_t"] > 0.5:
 			_star_shot = true

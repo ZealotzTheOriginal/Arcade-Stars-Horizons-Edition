@@ -79,34 +79,27 @@ Con Supabase real: `.env` (ver `.env.example`) y sin `ASH_DEV_AUTH`. Pruebas aut
 
 ## Ventana, escala y fondo
 
-- **Ventana sin bordes** con barra propia (`scripts/ui/window_chrome.gd`). Arrastre propio con encaje al soltar:
-  arriba = pantalla completa, izquierda/derecha = mitad de pantalla; arrastrar una ventana encajada la restaura.
-  Maximizar usa el área útil de la pantalla (respeta la barra de tareas) y restaura el tamaño anterior.
-- **Interfaz de tamaño fijo:** no se escala al redimensionar la ventana (sin *content scale*); solo se ajusta al DPI
-  de la pantalla (125 %, 150 %...). `ASH_UI_SCALE=1.5` fuerza un factor. Si la ventana es pequeña se ve menos contenido, no más pequeño.
-- **Fondo anclado al escritorio** (`assets/starfield.gdshader`, `scripts/ui/star_field.gd`): la ventana es un portal sobre un
-  campo fijo de estrellas y nebulosas; al moverla o redimensionarla se descubren otras zonas. Se calcula en píxeles físicos
-  (estrellas nítidas, borde de 1 px) y las nebulosas salen de una textura de ruido precalculada (barato: ~80 fps sin vsync a 1920x1020
-  en una GPU integrada). Las estrellas fugaces son el port de `starfield-background.ts` de Pro-Clustark.
-- **Paneles:** radio 6 px (tarjetas 4 px), fondo translúcido. Los radios pequeños se dibujan sin antialiasing: con él, el borde
-  de 1 px se ve más grueso en las esquinas.
-- **Nebulosas que destellan** (aparecen un instante, se apagan y cambian de lugar en cada ciclo) y fondo **rígido al arrastrar**:
-  al mover/redimensionar con el ratón el fondo viaja con la ventana (anclarlo al escritorio fotograma a fotograma es
-  imposible de sincronizar con el sistema y las estrellas "nadan"); al maximizar o encajar sí se descubren otras zonas.
-- **Tipografía:** todo en MAYÚSCULAS (Inter variable; Space Grotesk solo en el wordmark); la jerarquía se hace solo con el peso (700 títulos, 600
-  botones/enlaces, 500 texto, 400 secundario). Paneles sin borde. Navegación al estilo del navbar de Clustark (`nav_link.gd`).
-- **Arranque sin destellos:** sin splash de Godot, la ventana nace fuera de pantalla y se coloca cuando el splash ya está dibujado,
-  la transparencia por píxel se mantiene (no se alterna) y el hub se construye invisible y aparece con un fundido tras
-  redimensionar la ventana. Comprobado muestreando la pantalla durante el arranque (la build anterior mostraba picos de blanco/gris).
-- **Sidebar "Online"** plegable con el icono de la barra de navegación (se recuerda entre sesiones). Library compacta:
-  una sola acción por juego (UPDATE / DOWNLOAD) y sin textos de estado redundantes.
-- **Splash** (`scenes/splash.tscn`): ventana con transparencia por píxel (el logo flota sobre el escritorio); clic o tecla la saltan,
-  `ASH_NO_SPLASH=1` la omite. **Salir** pide confirmación (botón de cerrar, Alt+F4 o cierre del sistema; Esc cancela, Enter confirma).
-- Cada juego trae su propia copia del fondo y del estilo (`games/<id>/<id>/background.gd`, `style.gd`).
+- **Ventana de tamaño fijo** (`scripts/ui/window_chrome.gd`), como los launchers de juegos: grande (1280×720, por defecto)
+  o reducida (1024×576), elegible en *Settings → Window size* y recordada en `user://ui.cfg`. Sin maximizar, sin encajar
+  y sin redimensionar; solo minimizar, cerrar (con confirmación) y arrastrar. Si el tamaño grande no cabe, se usa el reducido.
+- **Esquinas redondeadas y borde suave**: `assets/window_frame.gdshader` recorta las esquinas (transparencia por píxel)
+  y dibuja un borde de 1 px encima de todo.
+- **Escala:** la interfaz solo se ajusta al DPI de la pantalla (125 %, 150 %…); `ASH_UI_SCALE=1.5` fuerza un factor.
+- **Fondo** (`assets/starfield.gdshader`, `scripts/ui/star_field.gd`): estrellas nítidas en píxeles físicos, nebulosas
+  que destellan y estrellas fugaces (port de `starfield-background.ts` de Pro-Clustark). Anclado a la ventana.
+  El shader respeta la opacidad heredada: si no, el fondo aparecía opaco de golpe durante el fundido de entrada.
+- **Tipografía:** solo **Inter** (variable); todo en MAYÚSCULAS y la jerarquía solo por peso (800 marca, 700 títulos,
+  600 botones/enlaces, 500 texto, 400 secundario). Paneles translúcidos sin borde. Navegación estilo navbar de Clustark.
+- **Arranque:** sin splash de Godot; la ventana nace de 8×8 px y transparente. El splash (`scenes/splash.tscn`) ya usa
+  el tamaño final del launcher (solo su zona central recibe el ratón) y el hub aparece en el sitio con un fundido, sin
+  redimensionar. Clic o tecla saltan el splash; `ASH_NO_SPLASH=1` lo omite.
+- **Sidebar "Online"** plegable (se recuerda). **Library** compacta: una sola acción por juego.
+- Cada juego trae su propia copia del fondo y del estilo (`games/<id>/<id>/background.gd`, `style.gd`) y no referencia
+  ningún archivo ni nodo del hub.
 
 ## Publicar versiones (launcher y juegos)
 
-Chuleta rápida en `RELEASING.md`.
+Chuleta rápida e historial de versiones en `RELEASING.md`.
 
 Todo se distribuye por **GitHub Releases** del repo. `tools\release.ps1` empaqueta, calcula SHA-256 y escribe el
 catálogo `manifest.json` (release con tag `catalog`, URL fija):

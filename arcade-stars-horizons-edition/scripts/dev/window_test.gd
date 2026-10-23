@@ -1,50 +1,45 @@
 extends SceneTree
-## Prueba la lógica de ventana (maximizar/encajar/restaurar) con una ventana real. Solo desarrollo.
+## Prueba la ventana de tamaño fijo (grande/reducido, centrado, no redimensionable). Solo desarrollo.
+## Restaura la preferencia de tamaño del usuario al terminar.
 var frame := 0
 var failures := 0
-var screen_usable := Rect2i()
-var before := Rect2i()
+var chrome
+var saved_pref := "large"
 
 func _check(name: String, ok: bool, extra: String = "") -> void:
 	print("%s  %s %s" % ["PASS" if ok else "FAIL", name, extra])
 	if not ok:
 		failures += 1
 
-func _win_rect() -> Rect2i:
-	return Rect2i(DisplayServer.window_get_position(), DisplayServer.window_get_size())
+func _expected(name: String) -> Vector2i:
+	return Vector2i((chrome.SIZES[name] * chrome.ui_scale()).round())
+
+var center_before := Vector2i.ZERO
+
+func _center() -> Vector2i:
+	return DisplayServer.window_get_position() + DisplayServer.window_get_size() / 2
 
 func _process(_d: float) -> bool:
 	frame += 1
-	var chrome = root.get_node("WindowChrome")
+	chrome = root.get_node("WindowChrome")
 	match frame:
 		2:
-			chrome._ensure_on_screen()    # la ventana nace fuera de pantalla (arranque sin destellos)
-		30:
-			before = _win_rect()
-			var screen := DisplayServer.window_get_current_screen()
-			screen_usable = DisplayServer.screen_get_usable_rect(screen)
-			print("screen ", screen, " usable ", screen_usable, " dpi ", DisplayServer.screen_get_dpi(screen), " ui_scale ", chrome.ui_scale(), " window ", before, " min ", root.min_size)
-			_check("scale factor applied", is_equal_approx(root.content_scale_factor, chrome.ui_scale()))
-			chrome._toggle_maximize()
-		40:
-			var r := _win_rect()
-			_check("maximize fills usable area", r == screen_usable, str(r))
-			_check("maximize button state", chrome.is_maximized())
-			chrome._toggle_maximize()
-		50:
-			_check("restore returns previous rect", _win_rect() == before, str(_win_rect()))
-			chrome._apply_snap(chrome.Snap.LEFT, screen_usable)
-		60:
-			var r := _win_rect()
-			var half := screen_usable.size.x / 2
-			_check("left half", r.position == screen_usable.position and r.size.y == screen_usable.size.y and r.size.x >= mini(half, root.min_size.x), str(r))
-			chrome._apply_snap(chrome.Snap.RIGHT, screen_usable)
-		70:
-			var r := _win_rect()
-			_check("right half ends at screen edge", r.end.x <= screen_usable.end.x + 1 and r.end.x >= screen_usable.end.x - 1 or r.size.x == root.min_size.x, str(r))
-			chrome._restore()
-		80:
-			_check("restore after halves", _win_rect() == before, str(_win_rect()))
+			saved_pref = chrome.window_size_name()
+			chrome.set_window_size("large")
+		12:
+			_check("large size", DisplayServer.window_get_size() == _expected("large"), str(DisplayServer.window_get_size()))
+			_check("not resizable (min == max)", root.min_size == root.max_size and root.min_size == DisplayServer.window_get_size())
+			center_before = _center()
+			chrome.set_window_size("small")
+		22:
+			_check("small size", DisplayServer.window_get_size() == _expected("small"), str(DisplayServer.window_get_size()))
+			_check("small keeps the window centre", (_center() - center_before).length() <= 2, "%s -> %s" % [center_before, _center()])
+			_check("preference saved", chrome.window_size_name() == "small")
+			chrome.set_window_size("large")
+		32:
+			_check("back to large", DisplayServer.window_get_size() == _expected("large"))
+			chrome.set_window_size(saved_pref)
+		36:
 			print("RESULT: %s" % ("ALL PASSED" if failures == 0 else "%d FAILED" % failures))
 			quit(1 if failures else 0)
 	return false

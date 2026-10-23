@@ -11,6 +11,8 @@ const LOCAL_SERVER_URL := "ws://127.0.0.1:9080"
 ## Descargas (launcher y juegos) desde GitHub Releases del repo. El catálogo es el asset
 ## manifest.json del release con tag "catalog" (lo genera tools/release.ps1).
 const RELEASES_BASE := "https://github.com/ZealotzTheOriginal/Arcade-Stars-Horizons-Edition/releases/download"
+## Página con todas las versiones publicadas (launcher y juegos).
+const RELEASES_PAGE := "https://github.com/ZealotzTheOriginal/Arcade-Stars-Horizons-Edition/releases"
 
 static func launcher_version() -> String:
 	return str(ProjectSettings.get_setting("application/config/version", "0.0.0"))

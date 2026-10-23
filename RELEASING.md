@@ -29,9 +29,19 @@ Quita `-Publish`: genera todo en `dist/release/` sin subir nada (revisa `dist/re
 Sube `MIN_LAUNCHER_VERSION` en `arcade-stars-horizons-edition/server/server_main.gd` a la versión nueva del launcher.
 Los antiguos verán el aviso rojo de actualización obligatoria.
 
+## Historial de versiones (todas las versiones pasadas)
+Cada publicación crea una release **propia y permanente** en GitHub: `launcher-1.1.0`, `game-minesweeper-1.2.0`…
+Publicar una versión nueva no borra las anteriores, así que todas siguen descargables en la página de Releases
+(*Settings → All versions* en el launcher). Además el script crea una **etiqueta git** con el mismo nombre en el commit
+publicado, para poder reconstruir cualquier versión desde el código. Solo las releases del launcher se marcan como "Latest".
+
+GitHub no cobra ni limita el espacio total de las releases de un repo público (cada archivo, hasta 2 GB), así que
+conservarlas todas es lo normal. Si algún día molestan, se borra una con `gh release delete launcher-1.0.0`
+(el catálogo nunca apunta a versiones antiguas, así que no afecta a los jugadores).
+
 ## Primera entrega a una persona nueva
-Zip con `ArcadeStars.exe` (de `dist/hub/`) y `games/minesweeper.pck` (de `dist/games/`) dentro de una carpeta con permiso de escritura.
-Después se actualiza y descarga todo desde el propio launcher.
+Basta con `ArcadeStars.exe` (de `dist/hub/`, o el zip de la última release `launcher-x.y.z`), en una carpeta con permiso
+de escritura. Los juegos se descargan desde la pestaña Library y el launcher se actualiza solo.
 
 ## Problemas típicos
 - `Remove-Item ... IOException` al generar: algún programa tiene abierta `dist/release`; el script ya lo tolera.

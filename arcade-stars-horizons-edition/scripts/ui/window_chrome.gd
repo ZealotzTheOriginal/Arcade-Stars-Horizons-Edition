@@ -1,54 +1,42 @@
 extends CanvasLayer
-## Barra de ventana propia (la ventana es sin bordes). Vive en un autoload para persistir al
-## cambiar entre el hub y los juegos:
+## Ventana propia del launcher (sin bordes del sistema), al estilo de los launchers de juegos:
+## tamaño FIJO (grande por defecto o reducido, elegible en ajustes), sin maximizar ni encajar,
+## esquinas redondeadas con un borde suave (transparencia por píxel) y barra propia. Vive en un
+## autoload para persistir entre el hub y los juegos:
 ##   BAR    -> barra completa (hub); el contenido debe dejar HEIGHT px arriba.
 ##   PILL   -> grupo flotante discreto arriba a la derecha (juegos).
-##   HIDDEN -> sin controles (p. ej. un juego a pantalla completa; Alt+F4 sigue cerrando).
-## Hace lo que Windows no hace por una ventana sin bordes: arrastre propio con encaje al soltar
-## (arriba = pantalla completa, izquierda/derecha = mitad de pantalla; arrastrar una ventana
-## encajada la restaura), maximizar sobre el área útil (respeta la barra de tareas) y agarres de
-## redimensionado. La interfaz NO se escala con la ventana: tamaño fijo, solo ajustado al DPI.
+##   HIDDEN -> sin controles (splash, o un juego que los oculte; Alt+F4 sigue cerrando).
+## La interfaz no se escala con la ventana: solo se ajusta al DPI de la pantalla.
 
 enum Mode { BAR, PILL, HIDDEN }
-enum Snap { NONE, FULL, LEFT, RIGHT }
 
 const HEIGHT := 36
 const PILL_BUTTON := Vector2(34, 28)
-const GRIP := 5
-const BASE_MIN_SIZE := Vector2i(760, 560)
-const SNAP_MARGIN := 6          # px físicos al borde de la pantalla que activan el encaje
-const DRAG_THRESHOLD := 4.0     # px que hay que mover antes de considerarlo arrastre
+const CORNER_RADIUS := 10.0
+## Tamaños lógicos (antes de aplicar el DPI). "large" es el predeterminado.
+const SIZES := {"large": Vector2(1280, 720), "small": Vector2(1024, 576)}
+const UI_CONFIG := "user://ui.cfg"
+const FRAME_SHADER := preload("res://assets/window_frame.gdshader")
 
 var mode := Mode.BAR
-## Compensa los desplazamientos hechos con el ratón (arrastrar/redimensionar) para que el fondo
-## se mueva rígido con la ventana; ver StarField._origin().
-var field_drift := Vector2.ZERO
-var _last_pos := Vector2.ZERO
-var _resizing := false
 var _splash := false
 var _root: Control
+var _frame: ColorRect
+var _frame_mat: ShaderMaterial
 var _confirm: Control
 var _confirm_text: Label
-var _snap := Snap.NONE
-var _restore_rect := Rect2i()
-var _dragging := false
-var _drag_started := false
-var _press_mouse := Vector2i.ZERO
-var _grab_offset := Vector2i.ZERO
 var _bar: PanelContainer
 var _pill: PanelContainer
-var _grips: Control
-var _max_buttons: Array[WindowButton] = []
 
 func _ready() -> void:
 	layer = 100
 	var win := get_window()
 	win.borderless = true
+	win.unresizable = true
 	win.title = "Arcade Stars"
 	get_tree().auto_accept_quit = false    # el cierre pasa por la confirmación
-	win.dpi_changed.connect(_apply_scale)
-	_apply_scale()
-	_last_pos = Vector2(DisplayServer.window_get_position())
+	win.dpi_changed.connect(_on_dpi_changed)
+	win.content_scale_factor = ui_scale()
 	# La ventana nace mínima (8x8, transparente) para que el arranque del motor no se vea ni capture clics;
 	# splash o enter_launcher le dan su tamaño. Si nadie lo hace, esta red de seguridad la deja visible.
 	get_tree().create_timer(2.5).timeout.connect(_ensure_on_screen)
@@ -60,66 +48,19 @@ func _ready() -> void:
 	_root = root
 	_build_bar(root)
 	_build_pill(root)
-	_build_grips(root)
+	_build_frame()
 	set_mode(Mode.BAR)
 
 func set_mode(m: Mode) -> void:
 	mode = m
 	_bar.visible = m == Mode.BAR
 	_pill.visible = m == Mode.PILL
-	_refresh_state()
 
-func is_maximized() -> bool:
-	return _snap == Snap.FULL
+func _process(_delta: float) -> void:
+	_frame_mat.set_shader_parameter("window_px", Vector2(get_window().size))
+	_frame_mat.set_shader_parameter("radius_px", CORNER_RADIUS * get_window().content_scale_factor)
 
-## Splash: ventana pequeña, centrada y con transparencia por píxel (el logo flota sin ventana visible).
-func begin_splash() -> void:
-	_splash = true
-	var win := get_window()
-	win.min_size = Vector2i.ZERO
-	win.transparent = true
-	get_viewport().transparent_bg = true
-	set_mode(Mode.HIDDEN)
-	_place_window(Vector2(560, 420))
-
-## Fin del splash: la ventana se mantiene transparente (el fondo del hub es opaco) para no tener
-## que cambiar de modo, que provocaba un destello blanco. Tamaño del launcher, barra y tamaño mínimo.
-func end_splash() -> void:
-	if not _splash:
-		return
-	_splash = false
-	_apply_scale()
-	set_mode(Mode.BAR)
-	_place_window(Vector2(1280, 720))
-
-## Entra al launcher: carga el hub (invisible), redimensiona la ventana con el hub ya construido y
-## solo entonces lo muestra con un fundido. Corre aquí (autoload) porque el splash se libera al cambiar de escena.
-func enter_launcher(hub: PackedScene) -> void:
-	Engine.set_meta("fade_in_hub", true)
-	get_tree().change_scene_to_packed(hub)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	end_splash()
-	await get_tree().process_frame
-	await get_tree().process_frame
-	var scene := get_tree().current_scene
-	if scene and scene.has_method("fade_in"):
-		scene.fade_in()
-
-func _ensure_on_screen() -> void:
-	if get_tree().current_scene and get_tree().current_scene.scene_file_path.ends_with("splash.tscn"):
-		return    # el splash gestiona la ventana
-	if DisplayServer.window_get_size().x < 400:
-		_place_window(Vector2(1280, 720))
-
-func _place_window(logical_size: Vector2) -> void:
-	var usable := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
-	var size := Vector2i((logical_size * ui_scale()).round())
-	size = Vector2i(mini(size.x, usable.size.x), mini(size.y, usable.size.y))
-	_snap = Snap.NONE
-	DisplayServer.window_set_size(size)
-	DisplayServer.window_set_position(usable.position + (usable.size - size) / 2)
-	_last_pos = Vector2(DisplayServer.window_get_position())
+# ── Tamaño fijo ──────────────────────────────────────────
 
 ## Factor de escala fijo según el DPI de la pantalla (125 %, 150 %…); ASH_UI_SCALE lo fuerza.
 func ui_scale() -> float:
@@ -129,13 +70,122 @@ func ui_scale() -> float:
 	var dpi := DisplayServer.screen_get_dpi(get_window().current_screen)
 	return clampf(snappedf(float(dpi) / 96.0, 0.25), 1.0, 3.0)
 
-func _apply_scale() -> void:
-	var win := get_window()
+func window_size_name() -> String:
+	var cfg := ConfigFile.new()
+	cfg.load(UI_CONFIG)
+	var name: String = cfg.get_value("ui", "window_size", "large")
+	return name if SIZES.has(name) else "large"
+
+## Cambia entre el tamaño grande y el reducido (se recuerda entre sesiones).
+func set_window_size(name: String) -> void:
+	if not SIZES.has(name):
+		return
+	var cfg := ConfigFile.new()
+	cfg.load(UI_CONFIG)
+	cfg.set_value("ui", "window_size", name)
+	cfg.save(UI_CONFIG)
+	var center := DisplayServer.window_get_position() + DisplayServer.window_get_size() / 2
+	_place_window(_launcher_size(), center)
+
+## Tamaño físico del launcher; si el grande no cabe en la pantalla, se usa el reducido.
+func _launcher_size() -> Vector2i:
+	var usable := _usable_rect()
 	var s := ui_scale()
-	win.content_scale_factor = s
-	win.min_size = Vector2i.ZERO if _splash else Vector2i((Vector2(BASE_MIN_SIZE) * s).round())
+	var wanted := Vector2i((SIZES[window_size_name()] * s).round())
+	if wanted.x > usable.size.x or wanted.y > usable.size.y:
+		wanted = Vector2i((SIZES["small"] * s).round())
+	return Vector2i(mini(wanted.x, usable.size.x), mini(wanted.y, usable.size.y))
+
+func _usable_rect() -> Rect2i:
+	return DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
+
+## Coloca la ventana con `size` (px físicos) centrada en `center` (por defecto, el centro de la pantalla).
+func _place_window(size: Vector2i, center: Vector2i = Vector2i(-1, -1)) -> void:
+	var usable := _usable_rect()
+	if center == Vector2i(-1, -1):
+		center = usable.position + usable.size / 2
+	var pos := center - size / 2
+	pos = pos.clamp(usable.position, usable.end - size)
+	var win := get_window()
+	win.min_size = Vector2i.ZERO
+	win.max_size = Vector2i.ZERO
+	DisplayServer.window_set_size(size)
+	DisplayServer.window_set_position(pos)
+	win.min_size = size
+	win.max_size = size
+
+func _on_dpi_changed() -> void:
+	get_window().content_scale_factor = ui_scale()
+	if not _splash:
+		_place_window(_launcher_size(), DisplayServer.window_get_position() + DisplayServer.window_get_size() / 2)
+
+# ── Splash y entrada al launcher ─────────────────────────
+
+## Splash: la ventana ya tiene el tamaño final del launcher y es transparente por píxel (el logo
+## flota sin ventana visible). Así no hay que redimensionarla al entrar al hub. Solo la zona central
+## recibe el ratón; el resto deja pasar los clics al escritorio.
+func begin_splash() -> void:
+	_splash = true
+	var win := get_window()
+	win.transparent = true
+	get_viewport().transparent_bg = true
+	set_mode(Mode.HIDDEN)
+	_frame.visible = false
+	var size := _launcher_size()
+	_place_window(size)
+	var half := Vector2(380, 300) * ui_scale()
+	var c := Vector2(size) / 2.0
+	DisplayServer.window_set_mouse_passthrough(PackedVector2Array([c - half, Vector2(c.x + half.x, c.y - half.y), c + half, Vector2(c.x - half.x, c.y + half.y)]))
+
+func end_splash() -> void:
+	if not _splash:
+		return
+	_splash = false
+	DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
+	_frame.visible = true
+	set_mode(Mode.BAR)
+	# La barra y el borde aparecen con el fundido del hub (ver enter_launcher), no antes.
+	_bar.modulate.a = 0.0
+	_frame_mat.set_shader_parameter("border_strength", 0.0)
+
+## Entra al launcher: carga el hub invisible y lo muestra con un fundido en el sitio (la ventana ya
+## tiene su tamaño). Corre aquí (autoload) porque el splash se libera al cambiar de escena.
+func enter_launcher(hub: PackedScene) -> void:
+	Engine.set_meta("fade_in_hub", true)
+	get_tree().change_scene_to_packed(hub)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not _splash:
+		_place_window(_launcher_size())    # sin splash (ASH_NO_SPLASH): la ventana aún es mínima
+	end_splash()
+	await get_tree().process_frame
+	var scene := get_tree().current_scene
+	if scene and scene.has_method("fade_in"):
+		scene.fade_in()
+	var tw := create_tween().set_parallel()
+	tw.tween_property(_bar, "modulate:a", 1.0, 0.35)
+	tw.tween_method(func(v: float): _frame_mat.set_shader_parameter("border_strength", v), 0.0, 1.0, 0.35)
+
+func _ensure_on_screen() -> void:
+	if _splash:
+		return    # el splash gestiona la ventana
+	if DisplayServer.window_get_size().x < 400:
+		_place_window(_launcher_size())
 
 # ── Construcción ─────────────────────────────────────────
+
+## Recorta las esquinas (transparencia por píxel) y dibuja un borde suave sobre todo lo demás.
+func _build_frame() -> void:
+	var layer_top := CanvasLayer.new()
+	layer_top.layer = 128
+	add_child(layer_top)
+	_frame = ColorRect.new()
+	_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_frame_mat = ShaderMaterial.new()
+	_frame_mat.shader = FRAME_SHADER
+	_frame.material = _frame_mat
+	layer_top.add_child(_frame)
 
 func _build_bar(root: Control) -> void:
 	_bar = PanelContainer.new()
@@ -153,7 +203,7 @@ func _build_bar(root: Control) -> void:
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_bar.add_child(h)
 	var pad := Control.new()
-	pad.custom_minimum_size.x = 2
+	pad.custom_minimum_size.x = 4
 	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_child(pad)
 	var logo := TextureRect.new()
@@ -166,8 +216,8 @@ func _build_bar(root: Control) -> void:
 	h.add_child(logo)
 	var title := CapsLabel.new()
 	title.theme_type_variation = "HeadLabel"
-	title.add_theme_font_override("font", AppTheme.brand_font(1))    # wordmark en Space Grotesk
-	title.add_theme_font_size_override("font_size", 15)
+	title.add_theme_font_override("font", AppTheme.brand_font())
+	title.add_theme_font_size_override("font_size", 14)
 	title.text = "ARCADE STARS"
 	title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -187,10 +237,10 @@ func _build_bar(root: Control) -> void:
 func _build_pill(root: Control) -> void:
 	_pill = PanelContainer.new()
 	_pill.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_pill.offset_left = -(PILL_BUTTON.x * 3 + 26)
-	_pill.offset_right = -8
-	_pill.offset_top = 8
-	_pill.offset_bottom = 8 + PILL_BUTTON.y
+	_pill.offset_left = -(PILL_BUTTON.x * 2 + 26)
+	_pill.offset_right = -10
+	_pill.offset_top = 10
+	_pill.offset_bottom = 10 + PILL_BUTTON.y
 	_pill.add_theme_stylebox_override("panel", AppTheme.box(Palette.fade(Palette.VOID, 0.55), Palette.fade(Palette.FG_100, 0.10), 6, 1))
 	_pill.mouse_filter = Control.MOUSE_FILTER_STOP
 	_pill.gui_input.connect(_on_drag_input)
@@ -208,153 +258,23 @@ func _build_pill(root: Control) -> void:
 	h.add_child(grip)
 	_add_window_buttons(h, PILL_BUTTON)
 
+## Solo minimizar y cerrar: el launcher no se maximiza.
 func _add_window_buttons(parent: Control, btn_size: Vector2) -> void:
 	var minimize := WindowButton.new(WindowButton.Kind.MINIMIZE, btn_size)
 	minimize.pressed.connect(func(): DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED))
-	var maximize := WindowButton.new(WindowButton.Kind.MAXIMIZE, btn_size)
-	maximize.pressed.connect(_toggle_maximize)
 	var close := WindowButton.new(WindowButton.Kind.CLOSE, btn_size)
-	close.pressed.connect(_close)
-	_max_buttons.append(maximize)
-	for b in [minimize, maximize, close]:
-		parent.add_child(b)
+	close.pressed.connect(request_close)
+	parent.add_child(minimize)
+	parent.add_child(close)
 
-func _build_grips(root: Control) -> void:
-	_grips = Control.new()
-	_grips.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_grips.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_grips)
-	var c := GRIP * 2
-	# [borde, anclas (l,t,r,b), offsets (l,t,r,b), cursor]
-	var defs := [
-		[DisplayServer.WINDOW_EDGE_TOP, [0, 0, 1, 0], [c, 0, -c, GRIP], Control.CURSOR_VSIZE],
-		[DisplayServer.WINDOW_EDGE_BOTTOM, [0, 1, 1, 1], [c, -GRIP, -c, 0], Control.CURSOR_VSIZE],
-		[DisplayServer.WINDOW_EDGE_LEFT, [0, 0, 0, 1], [0, c, GRIP, -c], Control.CURSOR_HSIZE],
-		[DisplayServer.WINDOW_EDGE_RIGHT, [1, 0, 1, 1], [-GRIP, c, 0, -c], Control.CURSOR_HSIZE],
-		[DisplayServer.WINDOW_EDGE_TOP_LEFT, [0, 0, 0, 0], [0, 0, c, c], Control.CURSOR_FDIAGSIZE],
-		[DisplayServer.WINDOW_EDGE_TOP_RIGHT, [1, 0, 1, 0], [-c, 0, 0, c], Control.CURSOR_BDIAGSIZE],
-		[DisplayServer.WINDOW_EDGE_BOTTOM_LEFT, [0, 1, 0, 1], [0, -c, c, 0], Control.CURSOR_BDIAGSIZE],
-		[DisplayServer.WINDOW_EDGE_BOTTOM_RIGHT, [1, 1, 1, 1], [-c, -c, 0, 0], Control.CURSOR_FDIAGSIZE],
-	]
-	for d in defs:
-		var g := Control.new()
-		g.anchor_left = d[1][0]
-		g.anchor_top = d[1][1]
-		g.anchor_right = d[1][2]
-		g.anchor_bottom = d[1][3]
-		g.offset_left = d[2][0]
-		g.offset_top = d[2][1]
-		g.offset_right = d[2][2]
-		g.offset_bottom = d[2][3]
-		g.mouse_default_cursor_shape = d[3]
-		g.mouse_filter = Control.MOUSE_FILTER_STOP
-		var edge: DisplayServer.WindowResizeEdge = d[0]
-		g.gui_input.connect(func(e: InputEvent):
-			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
-				_snap = Snap.NONE
-				_resizing = true
-				_refresh_state()
-				DisplayServer.window_start_resize(edge))
-		_grips.add_child(g)
+# ── Arrastre ─────────────────────────────────────────────
 
-# ── Arrastre y encaje ────────────────────────────────────
-
+## Arrastre nativo del sistema (suave); el fondo va anclado a la ventana, así que se mueve rígido.
 func _on_drag_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.double_click and mode == Mode.BAR:
-			_dragging = false
-			_toggle_maximize()
-			return
-		_dragging = true
-		_drag_started = false
-		_press_mouse = DisplayServer.mouse_get_position()
-		_grab_offset = _press_mouse - DisplayServer.window_get_position()
+		DisplayServer.window_start_drag()
 
-func _process(_delta: float) -> void:
-	_step_drag()
-	var pos := Vector2(DisplayServer.window_get_position())
-	if (_dragging and _drag_started) or _resizing:
-		field_drift -= pos - _last_pos
-	_last_pos = pos
-	if _resizing and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		_resizing = false
-
-func _step_drag() -> void:
-	if not _dragging:
-		return
-	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		_dragging = false
-		if _drag_started:
-			_end_drag()
-		return
-	var m := DisplayServer.mouse_get_position()
-	if not _drag_started:
-		if Vector2(m - _press_mouse).length() < DRAG_THRESHOLD * get_window().content_scale_factor:
-			return
-		_drag_started = true
-		if _snap != Snap.NONE:
-			_leave_snap()
-	DisplayServer.window_set_position(m - _grab_offset)
-
-## Al arrastrar una ventana encajada se restaura al tamaño anterior, manteniendo el agarre proporcional.
-func _leave_snap() -> void:
-	var win_pos := DisplayServer.window_get_position()
-	var win_size := DisplayServer.window_get_size()
-	var ratio := clampf(float(_press_mouse.x - win_pos.x) / maxf(win_size.x, 1.0), 0.0, 1.0)
-	var size := _restore_rect.size if _restore_rect.size != Vector2i.ZERO else Vector2i(1280, 720)
-	DisplayServer.window_set_size(size)
-	var m := DisplayServer.mouse_get_position()
-	var new_size := DisplayServer.window_get_size()
-	var grab_y := int(HEIGHT * get_window().content_scale_factor / 2.0)
-	_grab_offset = Vector2i(int(new_size.x * ratio), grab_y)
-	DisplayServer.window_set_position(m - _grab_offset)
-	_snap = Snap.NONE
-	_refresh_state()
-
-func _end_drag() -> void:
-	var m := DisplayServer.mouse_get_position()
-	var screen := DisplayServer.get_screen_from_rect(Rect2(Vector2(m), Vector2.ONE))
-	var usable := DisplayServer.screen_get_usable_rect(screen)
-	if m.y <= usable.position.y + SNAP_MARGIN:
-		_apply_snap(Snap.FULL, usable)
-	elif m.x <= usable.position.x + SNAP_MARGIN:
-		_apply_snap(Snap.LEFT, usable)
-	elif m.x >= usable.end.x - SNAP_MARGIN:
-		_apply_snap(Snap.RIGHT, usable)
-
-func _apply_snap(snap: Snap, usable: Rect2i) -> void:
-	if _snap == Snap.NONE:
-		_restore_rect = Rect2i(DisplayServer.window_get_position(), DisplayServer.window_get_size())
-	var half := usable.size.x / 2
-	var rect := usable
-	match snap:
-		Snap.LEFT:
-			rect = Rect2i(usable.position, Vector2i(half, usable.size.y))
-		Snap.RIGHT:
-			rect = Rect2i(usable.position + Vector2i(half, 0), Vector2i(usable.size.x - half, usable.size.y))
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-	DisplayServer.window_set_size(rect.size)    # tamaño y luego posición (el orden inverso deja 2 px de menos)
-	DisplayServer.window_set_position(rect.position)
-	_snap = snap
-	_refresh_state()
-
-func _toggle_maximize() -> void:
-	if _snap != Snap.NONE:
-		_restore()
-	else:
-		var screen := DisplayServer.window_get_current_screen()
-		_apply_snap(Snap.FULL, DisplayServer.screen_get_usable_rect(screen))
-
-func _restore() -> void:
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-	if _restore_rect.size != Vector2i.ZERO:
-		DisplayServer.window_set_size(_restore_rect.size)
-		DisplayServer.window_set_position(_restore_rect.position)
-	_snap = Snap.NONE
-	_refresh_state()
-
-func _close() -> void:
-	request_close()
+# ── Confirmación de salida ───────────────────────────────
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
@@ -427,8 +347,3 @@ func _build_confirm() -> void:
 	exit.custom_minimum_size.x = 120
 	exit.pressed.connect(_confirm_exit)
 	row.add_child(exit)
-
-func _refresh_state() -> void:
-	for b in _max_buttons:
-		b.maximized = is_maximized()
-	_grips.visible = mode != Mode.HIDDEN and _snap == Snap.NONE

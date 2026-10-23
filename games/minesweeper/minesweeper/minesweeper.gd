@@ -146,7 +146,9 @@ func _refresh() -> void:
 		match _view["reason"]:
 			"mine":
 				_banner_title.text = "BOOM!"
-				_banner_sub.text = "%s hit a mine. %s wins." % [_ctx.player_name(_view["exploded_by"]), wname]
+				var exploded: String = _ctx.player_name(_view["exploded_by"])
+				# En solitario no hay ganador: solo se informa de quién pisó la mina.
+				_banner_sub.text = "%s hit a mine." % exploded if _view["winner"] == 0 else "%s hit a mine. %s wins." % [exploded, wname]
 			"cleared":
 				_banner_title.text = "Board cleared"
 				_banner_sub.text = "%s wins." % wname

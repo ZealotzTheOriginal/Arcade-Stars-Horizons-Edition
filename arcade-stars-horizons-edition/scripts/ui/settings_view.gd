@@ -1,6 +1,6 @@
 class_name SettingsView
 extends PanelContainer
-## Ajustes: nickname, carpeta de juegos y comprobación de versión del launcher.
+## Ajustes: nickname, carpeta de juegos, tamaño de ventana y versión del launcher.
 
 const ERROR_COLOR := Color("#FF7A8A")
 
@@ -11,9 +11,13 @@ var _check_btn: Button
 
 func _ready() -> void:
 	theme_type_variation = "GlassPanel"
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(scroll)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 18)
-	add_child(v)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.add_theme_constant_override("separation", 14)
+	scroll.add_child(v)
 	var t := CapsLabel.new()
 	t.theme_type_variation = "HeadLabel"
 	t.text = "Settings"
@@ -46,6 +50,22 @@ func _ready() -> void:
 		OS.shell_open(GameLoader.user_games_dir()))
 	v.add_child(folder)
 
+	v.add_child(_section("WINDOW SIZE"))
+	var sizes := HBoxContainer.new()
+	sizes.add_theme_constant_override("separation", 8)
+	v.add_child(sizes)
+	var group := ButtonGroup.new()
+	for option in [["large", "LARGE"], ["small", "SMALL"]]:
+		var b := Button.new()
+		b.theme_type_variation = "CompactButton"
+		b.text = option[1]
+		b.toggle_mode = true
+		b.button_group = group
+		b.button_pressed = WindowChrome.window_size_name() == option[0]
+		var key: String = option[0]
+		b.pressed.connect(func(): WindowChrome.set_window_size(key))
+		sizes.add_child(b)
+
 	v.add_child(_section("LAUNCHER"))
 	var ver := HBoxContainer.new()
 	ver.add_theme_constant_override("separation", 12)
@@ -58,9 +78,18 @@ func _ready() -> void:
 	ver.add_child(_update_status)
 	_check_btn = Button.new()
 	_check_btn.text = "CHECK FOR UPDATES"
-	_check_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_check_btn.pressed.connect(func(): Updater.check())
-	v.add_child(_check_btn)
+	# Versión, estado y acciones en una sola línea (así cabe en el tamaño reducido).
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ver.add_child(spacer)
+	_check_btn.theme_type_variation = "CompactButton"
+	ver.add_child(_check_btn)
+	var releases := Button.new()
+	releases.theme_type_variation = "CompactButton"
+	releases.text = "ALL VERSIONS"
+	releases.pressed.connect(func(): OS.shell_open(AppConfig.RELEASES_PAGE))
+	ver.add_child(releases)
 
 	Updater.manifest_changed.connect(refresh)
 	Net.connected_to_room.connect(refresh)

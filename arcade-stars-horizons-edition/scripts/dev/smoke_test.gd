@@ -2,7 +2,7 @@ extends SceneTree
 ## Prueba de extremo a extremo contra un servidor local (dev auth). Dos procesos por prueba.
 ##   ASH_DEV_AUTH=1 PORT=9081 godot --headless --path . res://server/server.tscn
 ##   ASH_DEV_AUTH=1 ASH_SERVER_URL=ws://127.0.0.1:9081 godot --headless --path . -s res://scripts/dev/smoke_test.gd -- <rol>
-## Roles: host | join (partida completa con el .pck montado)
+## Roles: host | join (partida completa con el .pck montado) | solo (una sola persona)
 ##        host_block | join_nogame (el servidor debe bloquear el inicio si falta el juego; usar
 ##        ASH_GAMES_DIR=<carpeta vacía> en join_nogame y en el host)
 
@@ -29,7 +29,8 @@ func _process(delta: float) -> bool:
 		print("[%s] installed games: %s" % [role, loader.installed_versions()])
 		net.server_error.connect(func(m): blocked = true; print("[%s] server error: %s" % [role, m]))
 		backend.start()
-	var is_host_role := role.begins_with("host")
+	var is_host_role := role.begins_with("host") or role == "solo"
+	var needed := 1 if role == "solo" else 2
 	if backend.is_online():
 		if is_host_role and not created:
 			created = true
@@ -37,7 +38,7 @@ func _process(delta: float) -> bool:
 		if not is_host_role and not joined and not lobby.rooms.is_empty():
 			joined = true
 			net.join_room(lobby.rooms[0]["id"])
-	if is_host_role and not started and net.players.size() >= 2:
+	if is_host_role and not started and net.players.size() >= needed:
 		started = true
 		print("[%s] players: %s" % [role, net.players])
 		net.start_game()

@@ -4,12 +4,12 @@ class_name AppTheme
 ## importante y corto, menos para lo secundario. Paneles translúcidos SIN borde, acento verde lima.
 
 const FONT_BODY := preload("res://assets/fonts/Inter.ttf")
-const FONT_HEAD := preload("res://assets/fonts/SpaceGrotesk.ttf")
 
 const WEIGHT_LIGHT := 400
 const WEIGHT_REGULAR := 500
 const WEIGHT_SEMIBOLD := 600
 const WEIGHT_BOLD := 700
+const WEIGHT_HEAVY := 800
 
 static var _cached: Theme
 static var _fonts: Dictionary = {}
@@ -28,9 +28,9 @@ static func font(base: Font, weight: int, spacing: int = 0) -> FontVariation:
 static func head_font() -> FontVariation:
 	return font(FONT_BODY, WEIGHT_BOLD)
 
-## Wordmark ("ARCADE STARS"): lo único que sigue en Space Grotesk.
-static func brand_font(spacing: int = 0) -> FontVariation:
-	return font(FONT_HEAD, WEIGHT_BOLD, spacing)
+## Wordmark ("ARCADE STARS"): Inter en su peso más alto, con algo más de espaciado.
+static func brand_font(spacing: int = 2) -> FontVariation:
+	return font(FONT_BODY, WEIGHT_HEAVY, spacing)
 
 static func get_theme() -> Theme:
 	if _cached:
