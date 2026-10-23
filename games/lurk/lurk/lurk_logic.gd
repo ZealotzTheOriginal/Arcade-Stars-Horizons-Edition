@@ -10,7 +10,9 @@ extends RefCounted
 ## Luz: la nave de cada jugador solo ilumina para él; las balas (sus túneles), los destellos de
 ## impactos y explosiones, los misiles y el resplandor de la Sobrecarga iluminan para TODOS.
 ## Ruido: disparar o chocar fuerte delata (flecha en la pantalla de los rivales); los choques entre
-## asteroides también suenan, pero solo se oyen de cerca.
+## asteroides grandes también suenan, pero solo se oyen de cerca; fuera del modo sigilo, el motor deja
+## un rastro que oyen los rivales cercanos. Disparar además expone tu nave a todos un momento.
+## Gemas: moneda de la partida (no se pierden al morir) para comprar power-ups en la tienda.
 
 const Config = preload("shared/config.gd")
 const Physics = preload("shared/physics.gd")
@@ -25,9 +27,11 @@ const SNAPSHOT_EVERY := Config.SNAPSHOT_EVERY
 const SPAWN_SAMPLES := 48
 const GRID_CELL := 340.0    # > diámetro del asteroide más grande
 const BOT_ID := -1          # la IA (solo cuando hay un único jugador humano)
+const PUSH_OUT_EVERY := 10  # cada cuántos pasos se sacan gemas y power-ups de las rocas (se mueven despacio)
+const GRID_EVERY := 3       # cada cuántos pasos se rehace la rejilla de asteroides
 
 ## Tipos de evento (efectos puntuales que el cliente dibuja)
-enum Ev { HIT_ROCK, HIT_SHIP, BOOM, BUMP, SPAWN, BLAST, ROCK_BREAK, PICKUP, CRATE_BREAK, REFLECT }
+enum Ev { HIT_ROCK, HIT_SHIP, BOOM, BUMP, SPAWN, BLAST, ROCK_BREAK, PICKUP, CRATE_BREAK, REFLECT, GEM, BUY, CONJURE }
 
 var size: float
 var tick_count := 0
@@ -35,7 +39,7 @@ var time := 0.0
 ## pid -> ver _new_player()
 var players: Dictionary = {}
 var asteroids: Array = []        # { id, pos, vel, points, r, gen_r, rot, spin, ver, noise_at }
-var gems: Array = []             # { id, pos, active, respawn_at }
+var gems: Array = []             # { id, pos, active, respawn_at, bonus }  (bonus: de una roca rota, no reaparece)
 var pickups: Array = []          # { id, kind, pos, vel, active, respawn_at }
 var crate: Dictionary = {}       # { pos, hp, alive, respawn_at }  (contiene la Sobrecarga)
 var bullets: Array = []          # { id, owner, pos, vel, travelled, seq, light_from, light_ticks, kind, bounces, explosive }
@@ -49,11 +53,13 @@ var events: Array = []           # { tick, kind, pos, who, extra }
 var scoring := false             # solo con 2+ humanos (contra la IA no hay puntos)
 var _next_id := 1
 var _next_rock_id := 1
+var _next_gem_id := 1
 var _rng := RandomNumberGenerator.new()
 var _grid := Grid.new(GRID_CELL)
 var _gem_grid := Grid.new(GRID_CELL)
 var _known_shapes: Dictionary = {}   # pid -> { rock_id: ver } formas esculpidas ya enviadas
 var _bot_mem: Dictionary = {}
+var _glow_rocks: PackedInt32Array = PackedInt32Array()    # índices de las rocas brillantes (pocas)
 
 func _init(_settings: Dictionary, members: Array) -> void:
 	_rng.randomize()
@@ -77,10 +83,11 @@ func add_player(pid: int) -> void:
 		return
 	_grow_map()
 	players[pid] = {
-		"ship": {"pos": Vector2.ZERO, "vel": Vector2.ZERO, "hp": Config.MAX_HP, "overload": false, "frozen": false},
+		"ship": {"pos": Vector2.ZERO, "vel": Vector2.ZERO, "hp": Config.MAX_HP, "overload": false, "frozen": false, "stealth": false},
 		"aim": 0.0, "move": Vector2.ZERO, "thrust": false, "inputs": [], "ack": -1, "score": 0,
 		"alive": true, "ammo": Config.AMMO, "reload_at": 0.0, "next_fire": 0.0, "invuln_until": 0.0,
 		"hit_cooldown_until": 0.0, "last_damager": 0, "last_damage_time": -100.0, "spectre_flash_until": 0.0,
+		"gems": 0, "exposed_until": 0.0, "next_engine_noise": 0.0,
 	}
 	_known_shapes[pid] = {}
 	_clear_powerups(players[pid])
@@ -136,7 +143,8 @@ func _clear_powerups(pl: Dictionary) -> void:
 
 func _respawn(pid: int) -> void:
 	var pl: Dictionary = players[pid]
-	pl["ship"] = {"pos": _safe_spawn(pid), "vel": Vector2.ZERO, "hp": Config.MAX_HP, "overload": false, "frozen": false}
+	pl["ship"] = {"pos": _safe_spawn(pid), "vel": Vector2.ZERO, "hp": Config.MAX_HP, "overload": false, "frozen": false,
+		"stealth": pl["ship"].get("stealth", false)}
 	pl["alive"] = true
 	pl["ammo"] = Config.AMMO
 	pl["reload_at"] = 0.0
@@ -188,7 +196,8 @@ func _grow_map() -> void:
 # ── Entradas ─────────────────────────────────────────────
 
 ## payload: { s: int (secuencia), m: Vector2 (WASD, -1..1), a: float (apuntado), f: bool (disparo o
-##            detonar el misil), ms: bool (lanzar misil), r: bool (pedir reaparecer) }
+##            detonar el misil), ms: bool (lanzar misil), r: bool (pedir reaparecer),
+##            st: bool (modo sigilo), buy: int (power-up que se compra con gemas) }
 func handle_input(pid: int, p: Dictionary) -> void:
 	if not players.has(pid) or pid == BOT_ID or not (p.get("s") is int) or not (p.get("m") is Vector2) or not (p.get("a") is float):
 		return
@@ -196,8 +205,10 @@ func handle_input(pid: int, p: Dictionary) -> void:
 	if not (is_finite(m.x) and is_finite(m.y) and is_finite(p["a"])):
 		return
 	var queue: Array = players[pid]["inputs"]
+	var buy: int = p["buy"] if p.get("buy") is int else 0
 	queue.append({"s": p["s"], "m": m.clamp(Vector2(-1, -1), Vector2(1, 1)), "a": wrapf(p["a"], -PI, PI),
-		"f": p.get("f", false) == true, "ms": p.get("ms", false) == true, "r": p.get("r", false) == true})
+		"f": p.get("f", false) == true, "ms": p.get("ms", false) == true, "r": p.get("r", false) == true,
+		"st": p.get("st", false) == true, "buy": buy})
 	while queue.size() > Config.MAX_QUEUED_INPUTS:
 		var dropped: Dictionary = queue.pop_front()
 		# Las acciones puntuales no se pierden aunque se descarte la entrada. El disparo conserva el
@@ -206,6 +217,8 @@ func handle_input(pid: int, p: Dictionary) -> void:
 			queue[0]["fs"] = dropped.get("fs", dropped["s"])
 		for k in ["f", "ms", "r"]:
 			queue[0][k] = queue[0][k] or dropped[k]
+		if queue[0]["buy"] == 0:
+			queue[0]["buy"] = dropped["buy"]
 
 func handle_action(_pid: int, _payload: Dictionary) -> bool:
 	return false    # Lurk usa entradas continuas (handle_input)
@@ -222,6 +235,8 @@ func tick(dt: float) -> void:
 	_collide_ships()
 	_step_missiles(dt)
 	_step_bullets(dt)
+	if tick_count % PUSH_OUT_EVERY == 0:
+		_push_items_out()
 	_step_gems()
 	_step_pickups(dt)
 	_step_ghosts(dt)
@@ -238,6 +253,9 @@ func _step_player(pid: int, dt: float) -> void:
 	if not input.is_empty():
 		pl["move"] = input["m"]
 		pl["aim"] = input["a"]
+		pl["ship"]["stealth"] = input.get("st", false)
+		if input.get("buy", 0) != 0:
+			_buy(pid, input["buy"])
 	if not pl["alive"]:
 		pl["move"] = Vector2.ZERO
 		if input.get("r", false):
@@ -268,6 +286,9 @@ func _step_player(pid: int, dt: float) -> void:
 			_launch_missile(pid)
 	var ship: Dictionary = pl["ship"]
 	pl["thrust"] = Physics.step_ship(ship, pl["move"], dt)
+	if pl["thrust"] and not ship["stealth"] and time >= pl["next_engine_noise"]:
+		pl["next_engine_noise"] = time + Config.ENGINE_NOISE_EVERY
+		_noise(ship["pos"], Config.NOISE_ENGINE, pid)
 	var impact := 0.0
 	for i in _grid.query(ship["pos"]):
 		impact = maxf(impact, Physics.collide_ship_rock(ship, asteroids[i]))
@@ -349,10 +370,11 @@ func _score(pid: int, points: int) -> void:
 	if scoring and players.has(pid):
 		players[pid]["score"] += points
 
-## Ruido: el de un jugador sustituye a su anterior (una flecha por rival); los de asteroides se acumulan.
+## Ruido: el de un jugador sustituye a su anterior del mismo tipo (una flecha por rival y tipo); los de
+## asteroides se acumulan.
 func _noise(pos: Vector2, kind: int, src: int) -> void:
 	if src != 0:
-		noises = noises.filter(func(n): return n["src"] != src)
+		noises = noises.filter(func(n): return n["src"] != src or n["kind"] != kind)
 	noises.append({"pos": pos, "born": time, "kind": kind, "src": src})
 
 func _event(kind: int, pos: Vector2, who: int, extra: float = 0.0) -> void:
@@ -386,6 +408,7 @@ func _fire(pid: int, seq: int) -> void:
 	pl["next_fire"] = time + Config.FIRE_COOLDOWN
 	pl["invuln_until"] = 0.0    # disparar quita la invulnerabilidad del respawn
 	pl["spectre_flash_until"] = time + Config.SPECTRE_FIRE_FLASH
+	pl["exposed_until"] = time + Config.FIRE_EXPOSE_TIME    # todos ven tu nave un momento
 	_noise(pl["ship"]["pos"], Config.NOISE_SHOT, pid)
 
 func _step_bullets(dt: float) -> void:
@@ -581,9 +604,17 @@ func _carve(a: Dictionary, pos: Vector2, radius: float) -> void:
 	if pieces.size() == 1 and Shapes.area(pieces[0]) >= Shapes.area(a["points"]) - 1.0:
 		return    # el cráter no llegó a tocarlo
 	asteroids.erase(a)
+	if a.get("glow", false):
+		# Roca brillante: cualquier explosión la hace añicos y suelta muchas gemas
+		_event(Ev.ROCK_BREAK, center, 0, a["r"])
+		_drop_gems(center, Config.GLOW_ROCK_GEMS, a["r"])
+		return
 	if pieces.is_empty():
 		_event(Ev.ROCK_BREAK, center, 0, a["r"])
+		_drop_gems(center, clampi(roundi(a["r"] / Config.ROCK_GEM_RADIUS), 1, Config.ROCK_GEMS_MAX), a["r"])
 		return
+	if pieces.size() > 1:
+		_drop_gems(center, Config.SPLIT_GEMS, a["r"] * 0.5)
 	for i in pieces.size():
 		var poly: PackedVector2Array = pieces[i]
 		var c := Shapes.centroid(poly)
@@ -598,7 +629,15 @@ func _carve(a: Dictionary, pos: Vector2, radius: float) -> void:
 		if i > 0:
 			_next_rock_id += 1
 		asteroids.append({"id": id, "pos": piece_pos, "vel": vel, "points": local, "r": Shapes.bounding_radius(local),
-			"gen_r": a["gen_r"], "rot": rot, "spin": a["spin"] * (1.0 + 0.4 * i), "ver": a["ver"] + 1, "noise_at": 0.0})
+			"gen_r": a["gen_r"], "rot": rot, "spin": a["spin"] * (1.0 + 0.4 * i), "ver": a["ver"] + 1, "noise_at": 0.0, "glow": false})
+
+## Gemas sueltas (de una roca rota) repartidas por donde estaba.
+func _drop_gems(center: Vector2, count: int, spread: float) -> void:
+	for i in count:
+		var pos := center + Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(0.0, spread * 0.8)
+		gems.append({"id": _next_gem_id, "pos": pos, "active": true, "respawn_at": 0.0, "bonus": true})
+		_next_gem_id += 1
+	_rebuild_gem_grid()
 
 # ── Asteroides y gemas ───────────────────────────────────
 
@@ -607,25 +646,65 @@ func _step_asteroids(dt: float) -> void:
 		a["pos"] = (a["pos"] as Vector2) + (a["vel"] as Vector2) * dt
 		a["rot"] = wrapf(a["rot"] + a["spin"] * dt, -PI, PI)
 		Physics.bounce_asteroid_border(a, size)
-	_rebuild_grid()
+	# Las rocas van muy despacio (< 1 px por paso): la rejilla se rehace cada pocos pasos (su celda
+	# tiene margen de sobra) y los choques entre rocas se resuelven en pasos alternos.
+	if tick_count % GRID_EVERY == 0:
+		_rebuild_grid()
+	if tick_count % 2 != 0:
+		return
 	for i in asteroids.size():
-		for j in _grid.query(asteroids[i]["pos"]):
-			if j > i:
-				var a: Dictionary = asteroids[i]
-				var b: Dictionary = asteroids[j]
-				var impact := Physics.collide_asteroids(a, b)
-				# Un choque entre rocas grandes suena (se oye de cerca)
-				var big: bool = a["r"] >= Config.ROCK_NOISE_MIN_R and b["r"] >= Config.ROCK_NOISE_MIN_R
-				if big and impact > Config.ROCK_NOISE_MIN_SPEED and time > a["noise_at"] and time > b["noise_at"]:
-					a["noise_at"] = time + Config.ROCK_NOISE_COOLDOWN
-					b["noise_at"] = time + Config.ROCK_NOISE_COOLDOWN
-					var contact: Vector2 = (a["pos"] as Vector2).lerp(b["pos"], a["r"] / (a["r"] + b["r"]))
-					_noise(contact, Config.NOISE_CRASH, 0)
+		var a: Dictionary = asteroids[i]
+		var pa: Vector2 = a["pos"]
+		var ra: float = a["r"]
+		for j in _grid.query(pa):
+			if j <= i:
+				continue
+			var b: Dictionary = asteroids[j]
+			# Descarte rápido sin llamar a la física: la mayoría de vecinos no se tocan
+			var reach: float = ra + b["r"]
+			if pa.distance_squared_to(b["pos"]) >= reach * reach:
+				continue
+			var impact := Physics.collide_asteroids(a, b)
+			# Un choque entre rocas grandes suena (se oye de cerca)
+			var big: bool = a["r"] >= Config.ROCK_NOISE_MIN_R and b["r"] >= Config.ROCK_NOISE_MIN_R
+			if big and impact > Config.ROCK_NOISE_MIN_SPEED and time > a["noise_at"] and time > b["noise_at"]:
+				a["noise_at"] = time + Config.ROCK_NOISE_COOLDOWN
+				b["noise_at"] = time + Config.ROCK_NOISE_COOLDOWN
+				var contact: Vector2 = (a["pos"] as Vector2).lerp(b["pos"], a["r"] / (a["r"] + b["r"]))
+				_noise(contact, Config.NOISE_CRASH, 0)
+
+## Nada recogible puede quedar dentro de una roca: lo que una roca alcanza al moverse sale empujado.
+func _push_items_out() -> void:
+	var moved := false
+	for g in gems:
+		if g["active"] and _push_out(g, Config.GEM_RADIUS + 6.0):
+			moved = true
+	if moved:
+		_rebuild_gem_grid()
+	for p in pickups:
+		if p["active"]:
+			_push_out(p, Config.POWERUP_RADIUS + 8.0)
+	if crate.get("alive", false):
+		_push_out(crate, Config.CRATE_RADIUS + 6.0)
+
+func _push_out(item: Dictionary, margin: float) -> bool:
+	var pos: Vector2 = item["pos"]
+	for i in _grid.query(pos):
+		var a: Dictionary = asteroids[i]
+		var d := pos - (a["pos"] as Vector2)
+		var need: float = a["r"] + margin
+		if d.length() < need:
+			item["pos"] = (a["pos"] as Vector2) + (d.normalized() if d != Vector2.ZERO else Vector2.RIGHT) * need
+			return true
+	return false
 
 func _rebuild_grid() -> void:
 	_grid.clear()
+	_glow_rocks.clear()
 	for i in asteroids.size():
 		_grid.insert(asteroids[i]["pos"], i)
+		if asteroids[i].get("glow", false):
+			_glow_rocks.append(i)
 
 ## Índices de asteroides cerca de un punto (para la IA).
 func rocks_near(pos: Vector2, radius: float) -> PackedInt32Array:
@@ -637,7 +716,8 @@ func _spawn_gems(region: Rect2) -> void:
 	for y in rows:
 		for x in cols:
 			var cell := Rect2(region.position + Vector2(x, y) * Config.GEM_CELL, Vector2.ONE * Config.GEM_CELL)
-			gems.append({"id": gems.size() + 1, "pos": WorldGen.gem_position(_rng, cell, asteroids, _grid), "active": true, "respawn_at": 0.0})
+			gems.append({"id": _next_gem_id, "pos": WorldGen.gem_position(_rng, cell, asteroids, _grid), "active": true, "respawn_at": 0.0, "bonus": false})
+			_next_gem_id += 1
 	_rebuild_gem_grid()
 
 func _rebuild_gem_grid() -> void:
@@ -657,9 +737,16 @@ func _step_gems() -> void:
 			if g["active"] and pos.distance_to(g["pos"]) < reach:
 				g["active"] = false
 				g["respawn_at"] = time + Config.GEM_RESPAWN
+				players[pid]["gems"] += 1
 				_score(pid, Config.SCORE_GEM)
+				_event(Ev.GEM, g["pos"], pid)
+	# Las gemas de rocas rotas no reaparecen
+	var before := gems.size()
+	gems = gems.filter(func(g): return g["active"] or not g["bonus"])
+	if gems.size() != before:
+		_rebuild_gem_grid()
 	for g in gems:
-		if not g["active"] and time >= g["respawn_at"]:
+		if not g["active"] and not g["bonus"] and time >= g["respawn_at"]:
 			# Reaparece en otro sitio aleatorio del mapa
 			var cell := Rect2(Vector2(_rng.randf_range(0, size - Config.GEM_CELL), _rng.randf_range(0, size - Config.GEM_CELL)), Vector2.ONE * Config.GEM_CELL)
 			g["pos"] = WorldGen.gem_position(_rng, cell, asteroids, _grid)
@@ -733,12 +820,14 @@ func _step_pickups(dt: float) -> void:
 		for pid in players:
 			var pl: Dictionary = players[pid]
 			if pl["alive"] and (pl["ship"]["pos"] as Vector2).distance_to(p["pos"]) < reach:
-				_apply_powerup(pid, p["kind"])
-				_event(Ev.PICKUP, p["pos"], pid, p["kind"])
+				var kind := effective_kind(pid, p)
+				_apply_powerup(pid, kind)
+				_event(Ev.PICKUP, p["pos"], pid, kind)
 				_score(pid, Config.SCORE_POWERUP)
 				if p["kind"] == PU.Kind.OVERLOAD:
 					pickups.erase(p)
-					crate["respawn_at"] = time + Config.CRATE_RESPAWN
+					if not crate.get("alive", false) and crate.get("respawn_at", 0.0) <= time:
+						crate["respawn_at"] = time + Config.CRATE_RESPAWN
 				else:
 					p["active"] = false
 					p["respawn_at"] = time + Config.POWERUP_RESPAWN
@@ -752,6 +841,56 @@ func _step_pickups(dt: float) -> void:
 	if not crate.get("alive", false) and crate.get("respawn_at", 0.0) > 0.0 and time >= crate["respawn_at"] \
 			and pickups.filter(func(x): return x["kind"] == PU.Kind.OVERLOAD).is_empty():
 		_spawn_crate()
+
+## Un power-up que ya no te sirve (permanente que ya tienes, vida llena, armadura al máximo…) es
+## inútil para ti.
+func _useless(pl: Dictionary, kind: int) -> bool:
+	match kind:
+		PU.Kind.VISOR: return pl["visor"]
+		PU.Kind.RADAR: return pl["radar"]
+		PU.Kind.EXPLOSIVE: return pl["explosive"]
+		PU.Kind.HEAVY: return pl["heavy"]
+		PU.Kind.REPAIR: return pl["ship"]["hp"] >= Config.MAX_HP
+		PU.Kind.ARMOR: return pl["armor"] >= Config.ARMOR_MAX
+	return false
+
+## Lo que ES un power-up del mapa para `pid`: si su tipo no le sirve, para él es otro de la reserva
+## (elegido de forma estable por power-up y jugador, así no cambia de un instante a otro).
+func effective_kind(pid: int, p: Dictionary) -> int:
+	var kind: int = p["kind"]
+	if kind == PU.Kind.OVERLOAD or not players.has(pid):
+		return kind
+	var pl: Dictionary = players[pid]
+	if not _useless(pl, kind):
+		return kind
+	var pool: Array = PU.NORMAL.filter(func(k): return not _useless(pl, k))
+	if pool.is_empty():
+		return kind
+	return pool[absi(hash([p["id"], pid, kind])) % pool.size()]
+
+## Tienda: compra un power-up con gemas. La Sobrecarga aparece cerca, a la vista (con glitch).
+func _buy(pid: int, kind: int) -> void:
+	var pl: Dictionary = players[pid]
+	var price: int = Config.SHOP_PRICES.get(kind, -1)
+	if price < 0 or not pl["alive"] or pl["gems"] < price or _useless(pl, kind):
+		return
+	pl["gems"] -= price
+	if kind == PU.Kind.OVERLOAD:
+		var pos := _spot_near(pl["ship"]["pos"], Config.OVERLOAD_BUY_DISTANCE)
+		pickups.append({"id": _next_id, "kind": PU.Kind.OVERLOAD, "pos": pos, "vel": Vector2.ZERO, "active": true, "respawn_at": 0.0})
+		_next_id += 1
+		_event(Ev.CONJURE, pos, pid)
+		return
+	_apply_powerup(pid, kind)
+	_event(Ev.BUY, pl["ship"]["pos"], pid, kind)
+
+## Punto libre a `dist` de `center` (prueba varias direcciones).
+func _spot_near(center: Vector2, dist: float) -> Vector2:
+	for k in 12:
+		var p := center + Vector2.from_angle(_rng.randf() * TAU) * dist
+		if not _inside_asteroid(p, 30.0) and p.x > 60.0 and p.y > 60.0 and p.x < size - 60.0 and p.y < size - 60.0:
+			return p
+	return center
 
 func _apply_powerup(pid: int, kind: int) -> void:
 	var pl: Dictionary = players[pid]
@@ -842,6 +981,17 @@ func _sources(pid: int) -> Dictionary:
 		var o: Dictionary = players[other]
 		if o["alive"] and time < o["overload_until"] and eye.distance_to(o["ship"]["pos"]) < Config.OVERLOAD_VISIBLE:
 			circles.append([o["ship"]["pos"], Config.OVERLOAD_GLOW])
+	# Rocas brillantes y la caja de la Sobrecarga iluminan su entorno para todos
+	for i in _glow_rocks:
+		var a: Dictionary = asteroids[i]
+		if eye.distance_to(a["pos"]) < near:
+			circles.append([a["pos"], a["r"] + Config.GLOW_ROCK_LIGHT])
+	if crate.get("alive", false) and eye.distance_to(crate["pos"]) < Config.OVERLOAD_VISIBLE:
+		circles.append([crate["pos"], Config.CRATE_LIGHT])
+	# Guiando tu misil ves sin niebla todo lo que lo rodea
+	var m := missile_of(pid)
+	if not m.is_empty():
+		circles.append([m["pos"], Config.MISSILE_VIEW])
 	return {"circles": circles, "segs": segs}
 
 func _is_lit(src: Dictionary, p: Vector2, extra: float) -> bool:
@@ -860,6 +1010,8 @@ func can_see(viewer: int, other: int, src: Dictionary = {}) -> bool:
 		return false
 	var opos: Vector2 = o["ship"]["pos"]
 	var eye: Vector2 = players[viewer]["ship"]["pos"]
+	if time < o["exposed_until"]:
+		return true    # acaba de disparar: se le ve a través de la niebla
 	if time < o["overload_until"]:
 		return eye.distance_to(opos) < Config.OVERLOAD_VISIBLE
 	if time < o["spectre_until"] and time >= o["spectre_flash_until"] and eye.distance_to(opos) > Config.SPECTRE_NEAR:
@@ -897,7 +1049,8 @@ func state_for(pid: int) -> Dictionary:
 		maxf(0.0, pl["invuln_until"] - time), 1.0 if pl["alive"] else 0.0, pl["armor"],
 		_vision_radius(pl) / Config.VISION_RADIUS, 1.0 if pl["radar"] else 0.0, 1.0 if pl["heavy"] else 0.0, pl["missiles"],
 		maxf(0.0, pl["shield_until"] - time), maxf(0.0, pl["spectre_until"] - time), 1.0 if pl["explosive"] else 0.0,
-		maxf(0.0, pl["overload_until"] - time), pl["special_ammo"], 1.0 if ship["frozen"] else 0.0])
+		maxf(0.0, pl["overload_until"] - time), pl["special_ammo"], 1.0 if ship["frozen"] else 0.0,
+		pl["gems"], 1.0 if ship["stealth"] else 0.0])
 	var ships := {}
 	for other in players:
 		if other == pid or not can_see(pid, other, src):
@@ -908,7 +1061,8 @@ func state_for(pid: int) -> Dictionary:
 		if time < o["invuln_until"]: flags |= 1
 		if time < o["shield_until"]: flags |= 2
 		if time < o["overload_until"]: flags |= 4
-		if time < o["spectre_until"]: flags |= 8    # el rival solo ve un reflejo
+		if time < o["spectre_until"] and time >= o["exposed_until"]: flags |= 8    # el rival solo ve un reflejo
+		if o["ship"]["stealth"]: flags |= 16
 		ships[other] = PackedFloat32Array([opos.x, opos.y, o["ship"]["vel"].x, o["ship"]["vel"].y, o["aim"],
 			o["move"].x, o["move"].y, flags])
 	# Fantasmas del sabotaje psiónico (indistinguibles de naves reales): [owner, x, y, vx, vy]
@@ -922,7 +1076,8 @@ func state_for(pid: int) -> Dictionary:
 	for i in _candidates(_grid, src, margin + Config.ASTEROID_MAX_R):
 		var a: Dictionary = asteroids[i]
 		if _is_lit(src, a["pos"], margin + a["r"]):
-			ast.append_array([a["id"], a["pos"].x, a["pos"].y, a["vel"].x, a["vel"].y, a["gen_r"], a["rot"], a["spin"], a["ver"]])
+			ast.append_array([a["id"], a["pos"].x, a["pos"].y, a["vel"].x, a["vel"].y, a["gen_r"], a["rot"], a["spin"], a["ver"],
+				1.0 if a.get("glow", false) else 0.0])
 			# Las formas esculpidas se envían una vez por versión
 			if a["ver"] > 0 and known.get(a["id"], -1) != a["ver"]:
 				shapes[a["id"]] = a["points"]
@@ -935,9 +1090,9 @@ func state_for(pid: int) -> Dictionary:
 	var pu := PackedFloat32Array()
 	for p in pickups:
 		if p["active"] and _is_lit(src, p["pos"], margin * 0.5):
-			pu.append_array([p["id"], p["kind"], p["pos"].x, p["pos"].y, p["vel"].x, p["vel"].y])
+			pu.append_array([p["id"], effective_kind(pid, p), p["pos"].x, p["pos"].y, p["vel"].x, p["vel"].y])
 	var cr := PackedFloat32Array()
-	if crate.get("alive", false) and _is_lit(src, crate["pos"], margin):
+	if crate.get("alive", false) and eye.distance_to(crate["pos"]) < Config.OVERLOAD_VISIBLE:    # se ve a través de la niebla
 		cr = PackedFloat32Array([crate["pos"].x, crate["pos"].y, crate["hp"] / Config.CRATE_HP])
 	# Balas: [id, x, y, vx, vy, mía, seq, especial]
 	var bl := PackedFloat32Array()
@@ -962,6 +1117,8 @@ func state_for(pid: int) -> Dictionary:
 			continue
 		if n["src"] == 0 and eye.distance_to(n["pos"]) > Config.HEARING_RANGE:
 			continue
+		if n["kind"] == Config.NOISE_ENGINE and eye.distance_to(n["pos"]) > Config.ENGINE_NOISE_RANGE:
+			continue    # el motor solo lo oyen los que están cerca
 		nz.append_array([n["pos"].x, n["pos"].y, time - n["born"], n["kind"]])
 	var rd := PackedFloat32Array()
 	for p in pings:
@@ -978,7 +1135,7 @@ func state_for(pid: int) -> Dictionary:
 	for p in pickups:
 		if p["active"] and eye.distance_to(p["pos"]) < best:
 			best = eye.distance_to(p["pos"])
-			np = PackedFloat32Array([p["pos"].x, p["pos"].y, p["kind"]])
+			np = PackedFloat32Array([p["pos"].x, p["pos"].y, effective_kind(pid, p)])
 	var out := {"tk": tick_count, "sz": size, "ack": pl["ack"], "me": me, "np": np, "sh": ships, "as": ast, "gm": gm,
 		"pu": pu, "cr": cr, "bl": bl, "ms": ms, "fl": fl, "nz": nz, "rd": rd, "ev": ev, "sc": pl["score"]}
 	if not shapes.is_empty():

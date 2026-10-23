@@ -60,6 +60,7 @@ func _ready() -> void:
 	v.add_child(_label("Controls", "MutedLabel"))
 	for action in Settings.ACTIONS:
 		v.add_child(_binding_row(action))
+	v.add_child(_stealth_mode_row())
 	var reset := _button("RESET CONTROLS", func():
 		Settings.reset_bindings()
 		_refresh_bindings())
@@ -142,6 +143,24 @@ func _binding_row(action: String) -> Control:
 		b.text = "PRESS A KEY")
 	h.add_child(b)
 	_bind_buttons[action] = b
+	return h
+
+## Sigilo: alternar (pulsar) o mantener.
+func _stealth_mode_row() -> Control:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 8)
+	var l := _label("Stealth mode", "Label")
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(l)
+	var group := ButtonGroup.new()
+	for mode in [["toggle", "TOGGLE"], ["hold", "HOLD"]]:
+		var key: String = mode[0]
+		var b := _button(mode[1], func(): Settings.set_stealth_mode(key))
+		b.toggle_mode = true
+		b.button_group = group
+		b.button_pressed = Settings.stealth_mode() == key
+		b.custom_minimum_size.x = 76
+		h.add_child(b)
 	return h
 
 func _refresh_bindings() -> void:

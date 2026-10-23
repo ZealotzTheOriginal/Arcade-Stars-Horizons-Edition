@@ -1,5 +1,5 @@
 Sonidos de Kenney (www.kenney.nl), licencia CC0 1.0 (dominio público):
 - Sci-Fi Sounds:   shot_*, shot_special, missile_*, hit_ship_*, blast_*, ship_destroyed, rock_break, reflect, engine_loop
 - Impact Sounds:   hit_rock_*, bump, crate_break
-- Interface Sounds: pickup, spawn, reload, radar, glitch, ui_click, empty
+- Interface Sounds: pickup, spawn, reload, radar, glitch, ui_click, empty, gem, buy
 El ambiente espacial se genera por código (lurk/audio.gd).

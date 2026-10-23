@@ -2,10 +2,12 @@ extends RefCounted
 ## Constantes de Lurk compartidas por el servidor (simulación autoritativa) y el cliente (predicción
 ## de la nave propia). Unidades: píxeles del mundo y segundos.
 
+const PU = preload("powerups.gd")
+
 # ── Red ──────────────────────────────────────────────────
 const TICK_RATE := 30            # pasos de simulación por segundo
 const SNAPSHOT_EVERY := 2        # se envía estado cada N pasos (15 Hz)
-const MAX_QUEUED_INPUTS := 6     # entradas encoladas por jugador (más = latencia: se descartan las viejas)
+const MAX_QUEUED_INPUTS := 3     # entradas encoladas por jugador (más = latencia: se descartan las viejas)
 
 # ── Mapa ─────────────────────────────────────────────────
 const MAP_BASE := 7000.0         # lado del mapa con hasta BASE_PLAYERS jugadores
@@ -46,7 +48,7 @@ const DAMAGED_HP := 1.5
 const BULLET_DAMAGE := 1.5
 const HARD_HIT_DAMAGE := 0.5         # choque a >= 50 % de la velocidad máxima (delata)
 const SOFT_HIT_DAMAGE := 0.1         # choque más suave (silencioso)
-const SOFT_HIT_MIN_SPEED := 60.0     # por debajo, rozar no hace daño
+const SOFT_HIT_MIN_SPEED := SHIP_MAX_SPEED * 0.25    # por debajo (25 % de la velocidad máxima), chocar no hace daño
 const HIT_COOLDOWN := 0.5            # un mismo contacto no resta vida varias veces seguidas
 const KILL_CREDIT_TIME := 5.0        # quien te dañó en estos segundos se lleva la muerte
 const RESPAWN_INVULNERABLE := 2.0    # se pierde al disparar
@@ -55,11 +57,12 @@ const RESPAWN_INVULNERABLE := 2.0    # se pierde al disparar
 const AMMO := 3
 const RELOAD_TIME := 3.0             # solo al vaciar el cargador (no hay recarga manual)
 const FIRE_COOLDOWN := 0.28
-const BULLET_SPEED := 1650.0
+const BULLET_SPEED := 1485.0
 const BULLET_RANGE := 1500.0
-const BULLET_RADIUS := 3.0
+const BULLET_RADIUS := 4.5
 const BULLET_VISIBLE_RANGE := 2200.0 # los rivales ven las balas (no lo que iluminan) hasta esta distancia
 const REVEAL_TIME := 3.0             # disparar o chocar fuerte: flecha en la pantalla de los rivales
+const FIRE_EXPOSE_TIME := 1.5        # al disparar, todos ven tu nave (a través de la niebla) este tiempo
 
 # ── Túneles de luz (los proyectiles iluminan para quien dispara) ──
 const TUNNEL_RADIUS := 120.0
@@ -79,6 +82,14 @@ const ROCK_NOISE_MIN_R := 80.0       # solo suenan los choques entre asteroides 
 const ROCK_NOISE_COOLDOWN := 3.0
 const NOISE_SHOT := 0
 const NOISE_CRASH := 1
+const NOISE_ENGINE := 2              # rastro del motor fuera del modo sigilo (solo lo oyen los rivales cerca)
+const ENGINE_NOISE_RANGE := 900.0
+const ENGINE_NOISE_EVERY := 1.0
+
+# ── Modo sigilo ──────────────────────────────────────────
+const STEALTH_MAX_SPEED := SHIP_MAX_SPEED * 0.5
+const STEALTH_ACCEL := 800.0
+const STEALTH_DAMPING := 3.0         # más control: se desliza menos
 
 # ── Explosiones ──────────────────────────────────────────
 const BLAST_FLASH_TIME := 0.8
@@ -96,7 +107,8 @@ const RADAR_JITTER := 140.0          # posición aproximada
 const RADAR_SHOW := 1.6
 const HEAVY_SPREAD := 0.2            # radianes entre las balas del abanico
 const MISSILE_SPEED := 560.0
-const MISSILE_TURN := 2.6            # rad/s: gira hacia el ratón con suavidad (difícil a propósito)
+const MISSILE_TURN := 4.2            # rad/s: gira hacia el ratón (puede dar la vuelta con soltura)
+const MISSILE_VIEW := 1100.0         # guiándolo, ves sin niebla todo lo que rodea al misil
 const MISSILE_RADIUS := 6.0
 const MISSILE_LIGHT := 170.0
 const MISSILE_BLAST := 240.0
@@ -115,7 +127,7 @@ const EXPLOSIVE_DAMAGE := 0.75
 const EXPLOSIVE_CARVE := 70.0
 const PSIONIC_TIME := 5.0
 const PSIONIC_GHOSTS := 3
-const OVERLOAD_TIME := 10.0
+const OVERLOAD_TIME := 15.0
 const OVERLOAD_MAX_SPEED := 860.0    # doble de velocidad
 const OVERLOAD_ACCEL := 1150.0
 const OVERLOAD_DAMPING := 0.22       # poca tracción: derrapa mucho
@@ -123,9 +135,10 @@ const OVERLOAD_AMMO := 10
 const OVERLOAD_BOUNCES := 3
 const OVERLOAD_BULLET_DAMAGE := 0.5
 const OVERLOAD_GLOW := 280.0         # luz de la nave (visible en la niebla, con sombras)
-const OVERLOAD_VISIBLE := 1800.0
+const OVERLOAD_VISIBLE := 5000.0     # la Sobrecarga (y su caja) se ven desde muy lejos
 const CRATE_HP := 4.5                # tres balas normales
 const CRATE_RADIUS := 26.0
+const CRATE_LIGHT := 200.0           # la caja ilumina a su alrededor
 const CRATE_RESPAWN := 45.0
 const OVERLOAD_DRIFT := 35.0
 
@@ -133,3 +146,20 @@ const OVERLOAD_DRIFT := 35.0
 const SCORE_GEM := 10
 const SCORE_POWERUP := 25
 const SCORE_KILL := 100
+
+# ── Gemas como moneda (tienda) ───────────────────────────
+## Precio en gemas de cada power-up (las gemas de la partida no se pierden al morir).
+const SHOP_PRICES := {
+	PU.Kind.REPAIR: 5,
+	PU.Kind.VISOR: 10, PU.Kind.RADAR: 10, PU.Kind.SHIELD: 10, PU.Kind.ARMOR: 10, PU.Kind.SPECTRE: 10, PU.Kind.PSIONIC: 10,
+	PU.Kind.REDEEMER: 15, PU.Kind.HEAVY: 15, PU.Kind.EXPLOSIVE: 15,
+	PU.Kind.OVERLOAD: 20,
+}
+const ROCK_GEM_RADIUS := 45.0        # al pulverizar una roca: 1 gema por cada 45 px de radio (1-4)
+const ROCK_GEMS_MAX := 4
+const SPLIT_GEMS := 1                # al partirla en trozos
+const GLOW_ROCK_SHARE := 0.04        # ~4 % de los asteroides brillan
+const GLOW_ROCK_MIN_R := 55.0
+const GLOW_ROCK_LIGHT := 140.0       # luz alrededor (además de su radio), para todos
+const GLOW_ROCK_GEMS := 12
+const OVERLOAD_BUY_DISTANCE := 190.0 # la Sobrecarga comprada aparece cerca, a la vista

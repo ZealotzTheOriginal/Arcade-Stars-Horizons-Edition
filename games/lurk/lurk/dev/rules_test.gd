@@ -101,6 +101,7 @@ func _initialize() -> void:
 
 	_extra_checks()
 	_final_checks()
+	_v4_checks()
 	print("RESULT: %s" % ("ALL PASSED" if failures == 0 else "%d FAILED" % failures))
 	quit(1 if failures else 0)
 
@@ -137,6 +138,7 @@ func _extra_checks() -> void:
 	_check("heavy weapon fires a fan of 3", l.bullets.size() == 3)
 	l._apply_powerup(2, PU.Kind.SPECTRE)
 	l.players[2]["spectre_flash_until"] = 0.0
+	l.players[2]["exposed_until"] = 0.0    # acaba de disparar: estaría expuesto
 	_check("spectre hides from rivals at distance", not l.can_see(1, 2))
 	l._apply_powerup(1, PU.Kind.SHIELD)
 	var hp_before: float = l.players[1]["ship"]["hp"]
@@ -205,3 +207,85 @@ func _final_checks() -> void:
 	var st: Dictionary = l.state_for(1)
 	_check("nearest power-up is sent", st["np"].size() == 3)
 	_check("10 power-ups on the base map", l.pickups.size() == Config.POWERUP_BASE)
+
+## Tienda, gemas de rocas, rocas brillantes, sigilo, exposición al disparar, power-ups por jugador.
+func _v4_checks() -> void:
+	const PU = preload("res://lurk/shared/powerups.gd")
+	const Shapes = preload("res://lurk/shared/shapes.gd")
+	var l = _setup()
+	# Choques: por debajo del 25 % de la velocidad máxima no hacen daño
+	l._impact_damage(1, Config.SHIP_MAX_SPEED * 0.2, 0)
+	_check("crash under 25% is harmless", is_equal_approx(l.players[1]["ship"]["hp"], Config.MAX_HP))
+	l.players[1]["hit_cooldown_until"] = 0.0
+	l._impact_damage(1, Config.SHIP_MAX_SPEED * 0.3, 0)
+	_check("crash over 25% hurts", l.players[1]["ship"]["hp"] < Config.MAX_HP)
+	# Tienda
+	l.players[1]["gems"] = 12
+	l._buy(1, PU.Kind.VISOR)
+	_check("buy spends gems and applies", l.players[1]["gems"] == 2 and l.players[1]["visor"])
+	l._buy(1, PU.Kind.REDEEMER)
+	_check("cannot buy without enough gems", l.players[1]["missiles"] == 0 and l.players[1]["gems"] == 2)
+	l.players[1]["gems"] = 30
+	l._buy(1, PU.Kind.VISOR)
+	_check("cannot buy what you already have", l.players[1]["gems"] == 30)
+	var before: int = l.pickups.size()
+	l._buy(1, PU.Kind.OVERLOAD)
+	_check("bought overload appears nearby", l.pickups.size() == before + 1 and l.players[1]["gems"] == 10 		and (l.pickups[-1]["pos"] as Vector2).distance_to(l.players[1]["ship"]["pos"]) < Config.OVERLOAD_BUY_DISTANCE + 5.0)
+	# Gemas no se pierden al morir
+	l._kill(1)
+	l._respawn(1)
+	_check("gems survive death", l.players[1]["gems"] == 10)
+	# Power-up según lo que ya tienes: un Visor para quien ya lo tiene es otro
+	l.players[1]["visor"] = true
+	var p := {"id": 999, "kind": PU.Kind.VISOR}
+	_check("owned permanent becomes another for you", l.effective_kind(1, p) != PU.Kind.VISOR and l.effective_kind(2, p) == PU.Kind.VISOR)
+	l.players[2]["ship"]["hp"] = Config.MAX_HP
+	_check("full health: kit becomes another", l.effective_kind(2, {"id": 5, "kind": PU.Kind.REPAIR}) != PU.Kind.REPAIR)
+	# Rocas: pulverizar suelta gemas; la brillante, muchas
+	var lr = _setup()
+	lr.asteroids = [{"id": 1, "pos": Vector2(2000, 2000), "vel": Vector2.ZERO, "points": Shapes.generate(1, 90.0)["points"],
+		"r": 90.0, "gen_r": 90.0, "rot": 0.0, "spin": 0.0, "ver": 0, "noise_at": 0.0, "glow": false},
+		{"id": 2, "pos": Vector2(3000, 3000), "vel": Vector2.ZERO, "points": Shapes.generate(2, 80.0)["points"],
+		"r": 80.0, "gen_r": 80.0, "rot": 0.0, "spin": 0.0, "ver": 0, "noise_at": 0.0, "glow": true}]
+	lr._rebuild_grid()
+	var gems_before: int = lr.gems.size()
+	lr._explode(Vector2(2000, 2000), 400.0, 0.0, 0.0, 1, 400.0)
+	var rock_gems: int = lr.gems.size() - gems_before
+	_check("pulverized rock drops 1-4 gems", rock_gems >= 1 and rock_gems <= 4, str(rock_gems))
+	gems_before = lr.gems.size()
+	lr._explode(Vector2(3000 + 70, 3000), Config.EXPLOSIVE_RADIUS, 0.0, 0.0, 1, Config.EXPLOSIVE_CARVE)
+	_check("glowing rock shatters into 12 gems", lr.gems.size() - gems_before == Config.GLOW_ROCK_GEMS and lr.asteroids.is_empty())
+	# Nada dentro de las rocas
+	var lp = _setup()
+	lp.asteroids = [{"id": 1, "pos": Vector2(2500, 2500), "vel": Vector2.ZERO, "points": Shapes.generate(1, 100.0)["points"],
+		"r": 100.0, "gen_r": 100.0, "rot": 0.0, "spin": 0.0, "ver": 0, "noise_at": 0.0, "glow": false}]
+	lp._rebuild_grid()
+	lp.gems[0]["pos"] = Vector2(2510, 2500)
+	lp.pickups[0]["pos"] = Vector2(2490, 2500)
+	lp.pickups[0]["active"] = true
+	lp._push_items_out()
+	_check("gems and power-ups pushed out of rocks", (lp.gems[0]["pos"] as Vector2).distance_to(Vector2(2500, 2500)) >= 100.0 		and (lp.pickups[0]["pos"] as Vector2).distance_to(Vector2(2500, 2500)) >= 100.0)
+	# Sigilo: más lento; sin sigilo el motor deja rastro que oye un rival cercano
+	var ls = _setup()
+	ls.players[2]["ship"]["pos"] = Vector2(1600, 1000)
+	for k in 60:
+		seqs[1] += 1
+		ls.handle_input(1, {"s": seqs[1], "m": Vector2(1, 0), "a": 0.0, "st": true})
+		_input_for(ls, 2, PI)
+		ls.tick(1.0 / Config.TICK_RATE)
+	_check("stealth caps speed at 50%", (ls.players[1]["ship"]["vel"] as Vector2).length() <= Config.STEALTH_MAX_SPEED + 1.0)
+	_check("stealth leaves no engine trail", not ls.noises.any(func(n): return n["src"] == 1 and n["kind"] == Config.NOISE_ENGINE))
+	for k in 40:
+		seqs[1] += 1
+		ls.handle_input(1, {"s": seqs[1], "m": Vector2(0, 1), "a": 0.0, "st": false})
+		_input_for(ls, 2, PI)
+		ls.tick(1.0 / Config.TICK_RATE)
+	_check("engine trail heard by a nearby rival", (ls.state_for(2)["nz"] as PackedFloat32Array).size() >= 4)
+	# Disparar te expone a todos un momento
+	var le = _setup()
+	le.players[2]["ship"]["pos"] = Vector2(5000, 5000)
+	_check("far rival hidden before firing", not le.can_see(2, 1))
+	_input_for(le, 1, 0.0, true)
+	_input_for(le, 2, PI)
+	le.tick(1.0 / Config.TICK_RATE)
+	_check("firing exposes you to everyone", le.can_see(2, 1))

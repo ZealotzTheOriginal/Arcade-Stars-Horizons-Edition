@@ -22,6 +22,12 @@ const CRASH_COLOR := Color("#FFB86B")
 const DAMAGE_FLASH := 0.45
 const TOAST_TIME := 2.2
 const NOISE_SHOT := 0
+const NOISE_CRASH := 1
+const NOISE_ENGINE := 2
+const NOISE_RADAR := 3    # eco del radar (solo en el cliente)
+const ENGINE_COLOR := Color("#A6C8FF")
+const RADAR_COLOR := Color("#86F730")
+const GEM_COLOR := Color("#5EEAD4")
 
 var hp := 3.0
 var max_hp := 3.0
@@ -32,6 +38,8 @@ var special_ammo := 0
 var reload_left := 0.0
 var reload_time := 5.0
 var missiles := 0
+var gems := 0
+var stealth := false
 ## Efectos activos: [{ kind, left (s, -1 = hasta morir), total }]
 var effects: Array = []
 ## Ranking: [{ name, score, me }] (vacío = sin puntos, p. ej. contra la IA)
@@ -143,8 +151,12 @@ func _draw_hud() -> void:
 	var ammo_width := special_ammo * 12.0 if special_ammo > 0 else 3 * 20.0
 	for i in missiles:
 		Art.glyph(_canvas, PU.Kind.REDEEMER, ammo_origin + Vector2(ammo_width + 18.0 + i * 22.0, 3), 8.0, Art.color_of(PU.Kind.REDEEMER))
-	# Efectos activos con su tiempo restante
+	# Gemas (moneda de la tienda)
+	_gem_icon(origin + Vector2(int(ceil(max_hp)) * (CELL.x + CELL_GAP) + int(ceil(armor)) * (CELL.x + CELL_GAP) + 22.0, CELL.y / 2.0))
+	# Efectos activos con su tiempo restante (y el modo sigilo)
 	var fx_origin := ammo_origin + Vector2(14, -34)
+	if stealth:
+		_stealth_icon(fx_origin + Vector2(effects.size() * 36.0, 0))
 	for i in effects.size():
 		var e: Dictionary = effects[i]
 		var c := fx_origin + Vector2(i * 36.0, 0)
@@ -178,21 +190,33 @@ func _draw_ranking(vp: Vector2) -> void:
 ## Flechas (o aros, si se ve el punto) hacia los ruidos, con el icono de su tipo.
 func _draw_reveals() -> void:
 	for r in reveals:
-		var shot: bool = r["kind"] == NOISE_SHOT
-		var c := Color(SHOT_COLOR if shot else CRASH_COLOR, r["alpha"])
+		var kind: int = r["kind"]
+		var base := SHOT_COLOR
+		match kind:
+			NOISE_CRASH: base = CRASH_COLOR
+			NOISE_ENGINE: base = ENGINE_COLOR
+			NOISE_RADAR: base = RADAR_COLOR
+		var c := Color(base, r["alpha"])
 		var pos: Vector2 = r["pos"]
 		if r["on_screen"]:
 			_canvas.draw_arc(pos, 16.0, 0.0, TAU, 32, Color(c, c.a * 0.5), 1.2, true)
-			_noise_icon(pos, shot, c)
+			_noise_icon(pos, kind, c)
 		else:
 			var dir := Vector2.from_angle(r["angle"])
 			var pts := PackedVector2Array([pos, pos - dir * 16.0 + dir.orthogonal() * 8.0, pos - dir * 11.0, pos - dir * 16.0 - dir.orthogonal() * 8.0])
 			_canvas.draw_colored_polygon(pts, c)
-			_noise_icon(pos - dir * 32.0, shot, c)
+			_noise_icon(pos - dir * 32.0, kind, c)
 
-## Disparo = mira; choque = estallido.
-func _noise_icon(c: Vector2, shot: bool, col: Color) -> void:
-	if shot:
+## Disparo = mira; choque = estallido; motor = ondas; radar = sonar.
+func _noise_icon(c: Vector2, kind: int, col: Color) -> void:
+	if kind == NOISE_ENGINE:
+		for k in 3:
+			_canvas.draw_arc(c + Vector2(-6, 0), 4.0 + k * 3.5, -0.9, 0.9, 10, Color(col, col.a * (1.0 - k * 0.25)), 1.4, true)
+		return
+	if kind == NOISE_RADAR:
+		Art.glyph(_canvas, PU.Kind.RADAR, c, 9.0, col, _t)
+		return
+	if kind == NOISE_SHOT:
 		_canvas.draw_arc(c, 6.0, 0.0, TAU, 20, col, 1.4, true)
 		for k in 4:
 			var d := Vector2.from_angle(k * PI / 2.0)
@@ -203,3 +227,21 @@ func _noise_icon(c: Vector2, shot: bool, col: Color) -> void:
 			var inner := 2.5
 			var outer := 9.0 if k % 2 == 0 else 6.0
 			_canvas.draw_line(c + d * inner, c + d * outer, col, 1.6, true)
+
+## Rombo de gema con el número que llevas.
+func _gem_icon(c: Vector2) -> void:
+	var s := 7.0
+	var pts := PackedVector2Array([c + Vector2(0, -s), c + Vector2(s * 0.7, 0), c + Vector2(0, s), c + Vector2(-s * 0.7, 0)])
+	_canvas.draw_colored_polygon(pts, Color(GEM_COLOR, 0.3))
+	_canvas.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), GEM_COLOR, 1.4, true)
+	var font := Style.font(700, 1)
+	_canvas.draw_string(font, c + Vector2(12, 5), str(gems), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GEM_COLOR)
+
+## Modo sigilo: ojo entornado.
+func _stealth_icon(c: Vector2) -> void:
+	var col := Color("#E1E0FB", 0.85)
+	Art.frame(_canvas, c, 13.0, Color("#8A8FB8"))
+	_canvas.draw_arc(c + Vector2(0, -3), 7.0, PI * 0.15, PI * 0.85, 12, col, 1.4, true)
+	for k in [-1, 0, 1]:
+		var base := c + Vector2(k * 4.0, 3.5)
+		_canvas.draw_line(base, base + Vector2(k * 1.5, 3.0), col, 1.2, true)

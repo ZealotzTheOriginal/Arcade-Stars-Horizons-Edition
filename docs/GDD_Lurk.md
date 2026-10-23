@@ -53,3 +53,21 @@ Aclaraciones del diseño tras la primera revisión. Prevalecen sobre las seccion
 * **Choque fuerte:** resta **0.5** (antes 1).
 * **Menú de Escape:** volumen general / efectos / ambiente, controles reasignables (moverse, disparar, misil) y pantalla (ventana o completa); se guarda en el dispositivo.
 * **Sonido:** efectos de Kenney (CC0, ver `games/lurk/lurk/assets/sfx/CREDITS.txt`); los ruidos lejanos se oyen amortiguados desde su dirección; ambiente espacial generado por código; zumbido del motor propio.
+
+### 8.9. Versión 0.2.0 (24/10/2026)
+**Ajustes**
+* **Balas propias:** se dibujan siempre desde la simulación local (sin saltos ni retraso); el servidor solo confirma o termina cada bala. El servidor guarda menos entradas en cola (menos latencia).
+* **Choques:** por debajo del **25 %** de la velocidad máxima no hacen daño; por encima, igual que antes.
+* **Nada dentro de las rocas:** gemas, power-ups y la caja nunca quedan dentro de un asteroide (las rocas, al moverse, los empujan fuera).
+* **Radar:** cada eco aparece con su **icono** (y flecha si está fuera de la pantalla), como un ruido.
+* **Sobrecarga:** visible desde mucho más lejos (5000 px); dura **15 s**. Su **caja** ilumina alrededor y se ve a través de la niebla.
+* **El Redentor:** mientras lo guías **no hay niebla** en toda la pantalla; gira más rápido y su movimiento se predice en el cliente (sin saltos).
+* **Power-ups según lo que ya tienes:** si un power-up del mapa no te serviría (permanente que ya tienes, Kit con la vida llena, Armadura al máximo), **para ti es otro** de la reserva (cambio individual: cada jugador puede ver uno distinto en el mismo sitio).
+* **Disparos:** un 10 % más lentos y un 50 % más grandes. **Gemas:** suenan al recogerlas.
+
+**Novedades**
+* **Tienda de gemas** (Tab, reasignable): las gemas son la moneda de la partida y **no se pierden al morir**. Se elige el power-up exacto: **5** Kit · **10** Visor, Radar, Escudo, Armadura, Espectro, Psiónico · **15** Redentor, Arma Pesada, Carga Explosiva · **20** Sobrecarga, que aparece cerca, a la vista, con un glitch. La partida sigue mientras la tienda está abierta.
+* **Rocas que dan gemas:** pulverizar un asteroide suelta **1-4 gemas** según su tamaño; partirlo, 1.
+* **Asteroides brillantes** (~4 %): iluminan su entorno (también a través de la niebla, para todos); cualquier explosión los hace añicos y sueltan **12 gemas**.
+* **Modo sigilo** (Shift izquierdo; alternar o mantener, a elegir en el menú): **mitad de velocidad**, más control y menos derrape, llama y motor discretos. **Sin sigilo**, el motor deja un **rastro de ruido** (icono propio) que oyen los rivales a menos de 900 px.
+* **Disparar te expone:** durante **1,5 s** todos los jugadores ven tu nave a través de la niebla (además de la flecha de 3 s).

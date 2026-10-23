@@ -8,13 +8,17 @@ const Shapes = preload("shapes.gd")
 
 ## Avanza la nave un paso. `ship` es un Dictionary con pos, vel, hp; `move` es la dirección de WASD
 ## (componentes -1, 0 o 1). Devuelve si la nave está acelerando (para el fuego del motor).
-## Modificadores: ship.overload (doble velocidad, poca tracción) y ship.frozen (controlando un misil:
-## la nave no acelera y se va frenando).
+## Modificadores: ship.overload (doble velocidad, poca tracción), ship.stealth (modo sigilo: mitad
+## de velocidad y más control) y ship.frozen (controlando un misil: no acelera y se va frenando).
 static func step_ship(ship: Dictionary, move: Vector2, dt: float) -> bool:
 	var damaged: bool = ship["hp"] <= Config.DAMAGED_HP
 	var accel := Config.SHIP_DAMAGED_ACCEL if damaged else Config.SHIP_ACCEL
 	var damping := Config.SHIP_DAMAGED_DAMPING if damaged else Config.SHIP_DAMPING
 	var max_speed := Config.SHIP_MAX_SPEED
+	if ship.get("stealth", false) and not ship.get("overload", false):
+		accel = Config.STEALTH_ACCEL
+		damping = Config.STEALTH_DAMPING
+		max_speed = Config.STEALTH_MAX_SPEED
 	if ship.get("overload", false):
 		accel = Config.OVERLOAD_ACCEL
 		damping = Config.OVERLOAD_DAMPING

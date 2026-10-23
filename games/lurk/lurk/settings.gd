@@ -12,6 +12,8 @@ const ACTIONS := {
 	"lurk_right": ["Move right", ["key", KEY_D]],
 	"lurk_fire": ["Fire", ["mouse", MOUSE_BUTTON_LEFT]],
 	"lurk_missile": ["Launch missile", ["mouse", MOUSE_BUTTON_RIGHT]],
+	"lurk_stealth": ["Stealth", ["key", KEY_SHIFT]],
+	"lurk_shop": ["Shop", ["key", KEY_TAB]],
 }
 const VOLUMES := {"Lurk": 0.9, "LurkSFX": 0.85, "LurkAmbience": 0.6}
 
@@ -26,6 +28,15 @@ static func volume(bus: String) -> float:
 static func set_volume(bus: String, value: float) -> void:
 	var cfg := _load()
 	cfg.set_value("audio", bus, value)
+	cfg.save(PATH)
+
+## Modo sigilo: "toggle" (pulsar activa / desactiva) o "hold" (mientras se mantiene).
+static func stealth_mode() -> String:
+	return str(_load().get_value("controls", "stealth_mode", "toggle"))
+
+static func set_stealth_mode(mode: String) -> void:
+	var cfg := _load()
+	cfg.set_value("controls", "stealth_mode", mode)
 	cfg.save(PATH)
 
 static func fullscreen() -> bool:

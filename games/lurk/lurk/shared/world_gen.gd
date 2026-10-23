@@ -7,7 +7,7 @@ const Config = preload("config.gd")
 const Grid = preload("grid.gd")
 const Shapes = preload("shapes.gd")
 
-## Asteroides: Array de { id, pos, vel, points, r, gen_r, rot, spin, ver }.
+## Asteroides: Array de { id, pos, vel, points, r, gen_r, rot, spin, ver, glow }.
 static func asteroids(rng: RandomNumberGenerator, size: float, first_id: int = 1, region := Rect2()) -> Array:
 	var area := region if region.has_area() else Rect2(0, 0, size, size)
 	var target := area.get_area() * Config.ASTEROID_COVERAGE
@@ -34,8 +34,10 @@ static func asteroids(rng: RandomNumberGenerator, size: float, first_id: int = 1
 		var id := first_id + out.size()
 		var shape := Shapes.generate(id, r)
 		# r = radio envolvente del contorno (rejilla y choques entre asteroides); ver = 0 → forma generada desde el id
+		# Algunas rocas medianas o grandes son brillantes: iluminan su entorno y valen muchas gemas
+		var glow := r >= Config.GLOW_ROCK_MIN_R and rng.randf() < Config.GLOW_ROCK_SHARE * 2.0
 		out.append({"id": id, "pos": pos, "vel": Vector2.from_angle(rng.randf() * TAU) * speed, "points": shape["points"],
-			"r": Shapes.bounding_radius(shape["points"]), "gen_r": r, "rot": shape["rot"], "spin": shape["spin"], "ver": 0})
+			"r": Shapes.bounding_radius(shape["points"]), "gen_r": r, "rot": shape["rot"], "spin": shape["spin"], "ver": 0, "glow": glow})
 		grid.insert(pos, out.size() - 1)
 		covered += PI * r * r
 	return out

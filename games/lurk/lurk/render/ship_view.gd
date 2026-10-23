@@ -25,6 +25,7 @@ var invulnerable := false    # parpadea mientras dura la invulnerabilidad del re
 var shield := false          # burbuja del Escudo de Colisión
 var overload := false        # aura de la Sobrecarga (el resplandor con sombras va aparte)
 var cloak := 0.0             # Espectro: 0 visible, 1 casi invisible (con reflejo)
+var stealth := false         # modo sigilo: llama pequeña y discreta
 var _fx: Node2D              # burbuja y aura, encima del casco
 var _t := 0.0
 var _hull: Node2D
@@ -68,7 +69,7 @@ func _process(delta: float) -> void:
 		_flame_pivot.rotation = lerp_angle(_flame_pivot.rotation, thrust_dir.angle() + PI, minf(1.0, delta * 18.0))
 	_t += delta
 	var blink := 0.45 + 0.55 * absf(sin(_t * 14.0)) if invulnerable else 1.0
-	_flame_mat.set_shader_parameter("power", _power * alpha * (1.0 - cloak * 0.85))
+	_flame_mat.set_shader_parameter("power", _power * alpha * (1.0 - cloak * 0.85) * (0.35 if stealth else 1.0))
 	_flame_pivot.visible = _power > 0.01
 	# Espectro: el casco tiembla un poco (reflejo) y casi desaparece
 	_hull.position = Vector2(sin(_t * 31.0), cos(_t * 27.0)) * 1.5 * cloak

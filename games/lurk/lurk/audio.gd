@@ -18,7 +18,7 @@ const SOUNDS := {
 	"blast_small": ["blast_small"], "blast_big": ["blast_big"], "ship_destroyed": ["ship_destroyed"],
 	"rock_break": ["rock_break"], "bump": ["bump"], "crate_break": ["crate_break"], "pickup": ["pickup"],
 	"reflect": ["reflect"], "spawn": ["spawn"], "reload": ["reload"], "radar": ["radar"], "glitch": ["glitch"],
-	"ui_click": ["ui_click"], "empty": ["empty"],
+	"ui_click": ["ui_click"], "empty": ["empty"], "gem": ["gem"], "buy": ["buy"],
 }
 
 var _streams: Dictionary = {}
