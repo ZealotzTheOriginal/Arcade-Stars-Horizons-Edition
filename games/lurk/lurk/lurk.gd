@@ -22,6 +22,8 @@ const Fx = preload("res://lurk/render/fx.gd")
 const Neon = preload("res://lurk/render/neon.gd")
 const Art = preload("res://lurk/render/powerup_art.gd")
 const PauseMenu = preload("res://lurk/ui/pause_menu.gd")
+const Settings = preload("res://lurk/settings.gd")
+const Audio = preload("res://lurk/audio.gd")
 const Hud = preload("res://lurk/ui/hud.gd")
 const FOG_SHADER := preload("res://lurk/assets/fog.gdshader")
 const BG_SHADER := preload("res://lurk/assets/space_bg.gdshader")
@@ -39,13 +41,11 @@ const TRAIL_STEP := 70.0           # cada cuánto se fija un punto del túnel de
 const MAX_FOG_SEGS := 64
 const MAX_FOG_LIGHTS := 24
 const MAX_OCCLUDERS := 24
-const LOCAL_BULLET_TIMEOUT := 0.6  # una bala predicha que el servidor no confirma se descarta
+const LOCAL_BULLET_GRACE := 0.25  # margen sobre el ping antes de dar por perdida una bala predicha
 const BOT_COLOR := Color("#FF9F43")
 const ROCK_BREAK_COLOR := Color("#B9C8E8")
 
-const ACTIONS := {
-	"lurk_up": KEY_W, "lurk_down": KEY_S, "lurk_left": KEY_A, "lurk_right": KEY_D,
-}
+const DISTANT_NOISE := 600.0     # ruidos más lejos que esto se oyen amortiguados (delación)
 
 ## Igual que en lurk_logic.gd
 enum Ev { HIT_ROCK, HIT_SHIP, BOOM, BUMP, SPAWN, BLAST, ROCK_BREAK, PICKUP, CRATE_BREAK, REFLECT }
@@ -85,6 +85,7 @@ var _ship_snaps: Array = []           # [{ tk, ships: {pid: PackedFloat32Array} 
 var _local_bullets: Array = []        # predichas: { seq, pos, dir, travelled, born }
 var _server_bullets: Dictionary = {}  # id -> { pos, vel, tk, mine, seq, special }
 var _confirmed: Dictionary = {}       # seq de disparos propios que el servidor ya creó
+var _rtt := 0.15                      # ida y vuelta estimada (s): entrada enviada → confirmada
 var _trails: Dictionary = {}          # clave de bala -> { last, head }
 var _segments: Array = []             # tramos de túnel { a, b, born }
 var _flashes: Array = []              # { pos, radius, born, life }
@@ -95,6 +96,7 @@ var _missiles: Dictionary = {}        # id -> { view, pos, angle, tk, mine }
 var _ghosts: Array = []               # [{ owner, pos, vel, tk }]
 var _ghost_views: Array = []
 var _glitch := 0.0
+var _nearest_pickup := PackedFloat32Array()    # [x, y, tipo] del power-up más cercano
 var _shape_cache: Dictionary = {}     # id -> PackedVector2Array (formas esculpidas recibidas)
 
 # Vistas
@@ -123,24 +125,24 @@ var _glitch_mat: ShaderMaterial
 var _glitch_rect: ColorRect
 var _menu: Control
 var _hud: Control
+var _audio: Node
+var _engine_power := 0.0
+var _heard: Dictionary = {}           # ruidos ya sonados (para no repetirlos en cada estado)
+var _known_bullets: Dictionary = {}   # balas ajenas ya oídas
+var _was_reloading := false
 
 ## Llamado por el hub cuando la escena ya está en el árbol.
 func start(ctx) -> void:
 	_ctx = ctx
-	_setup_input()
+	Settings.apply_bindings()
 	_build()
+	if Settings.fullscreen() and not ctx.is_fullscreen():
+		ctx.set_fullscreen(true)
 	ctx.view_received.connect(_on_view)
 	ctx.state_received.connect(_on_state)
 	ctx.send_ready()
 	_started = true
 
-func _setup_input() -> void:
-	for action in ACTIONS:
-		if not InputMap.has_action(action):
-			InputMap.add_action(action)
-			var ev := InputEventKey.new()
-			ev.physical_keycode = ACTIONS[action]
-			InputMap.action_add_event(action, ev)
 
 func _color_of(pid: int) -> Color:
 	return BOT_COLOR if pid < 0 else _ctx.player_color(pid)
@@ -231,8 +233,16 @@ func _build() -> void:
 	_menu.visible = false
 	_menu.resume_requested.connect(func(): _menu.visible = false)
 	_menu.leave_requested.connect(func(): _ctx.leave())
-	_menu.fullscreen_toggled.connect(_toggle_fullscreen)
+	_menu.fullscreen_changed.connect(_set_fullscreen)
+	_menu.volume_changed.connect(func(bus, value): _audio.set_volume(bus, value))
+	_menu.clicked.connect(func(): _audio.play("ui_click", -10.0))
 	ui_layer.add_child(_menu)
+
+	_audio = Audio.new()
+	add_child(_audio)
+	_audio.setup(_world)
+	for bus in Settings.VOLUMES:
+		_audio.set_volume(bus, Settings.volume(bus))
 
 func _draw_border() -> void:
 	var s := _size
@@ -245,6 +255,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == KEY_ESCAPE:
 			_menu.visible = not _menu.visible
 			_menu.set_fullscreen_state(_ctx.is_fullscreen())
+			_audio.play("ui_click", -10.0)
 			get_viewport().set_input_as_handled()
 			return
 		if event.physical_keycode == KEY_F11:
@@ -258,14 +269,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not _alive:
 		_respawn_queued = true    # muerto: cualquier tecla o clic reaparece
-	elif event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			_fire_queued = true    # disparar (o detonar el misil que estás guiando)
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			_launch_queued = true  # lanzar misil
+	elif event.is_action_pressed("lurk_fire"):
+		_fire_queued = true    # disparar (o detonar el misil que estás guiando)
+	elif event.is_action_pressed("lurk_missile"):
+		_launch_queued = true  # lanzar misil
 
 func _toggle_fullscreen() -> void:
-	_ctx.set_fullscreen(not _ctx.is_fullscreen())
+	_set_fullscreen(not _ctx.is_fullscreen())
+
+func _set_fullscreen(enabled: bool) -> void:
+	_ctx.set_fullscreen(enabled)
+	Settings.set_fullscreen(enabled)
 	_menu.set_fullscreen_state(_ctx.is_fullscreen())
 
 func _read_move() -> Vector2:
@@ -307,6 +321,10 @@ func _fixed_step() -> void:
 		input["f"] = true
 		if not _pred["frozen"]:
 			shot = _predict_shot()
+			if shot:
+				_audio.play("shot_special" if _me_value(20) > 0.0 else "shot", -3.0)
+			elif _ammo <= 0 and _me_value(20) <= 0.0:
+				_audio.play("empty", -12.0)
 	if _launch_queued and _alive and _me_value(15) > 0.0 and not _pred["frozen"]:
 		input["ms"] = true
 	if _respawn_queued and not _alive:
@@ -317,6 +335,7 @@ func _fixed_step() -> void:
 	_ctx.send_input(input)
 	var pending := input.duplicate()
 	pending["shot"] = shot
+	pending["sent"] = _time
 	_pending.append(pending)
 	if _pending.size() > MAX_PENDING:
 		_pending.pop_front()
@@ -414,10 +433,14 @@ func _on_state(s: Dictionary) -> void:
 		_pings.append({"pos": Vector2(rd[i], rd[i + 1]), "born": born})
 		if born > _last_ping + 0.5:
 			_last_ping = born
+			_audio.play("radar", -8.0)
+	if _ghosts.is_empty() and not s.get("gh", []).is_empty():
+		_audio.play("glitch", -4.0)
 	_ghosts.clear()
 	for g in s.get("gh", []):
 		_ghosts.append({"owner": g[0], "pos": Vector2(g[1], g[2]), "vel": Vector2(g[3], g[4]), "tk": tk})
 	_update_ranking(s.get("rk", []))
+	_nearest_pickup = s.get("np", PackedFloat32Array())
 	_play_events(s.get("ev", PackedFloat32Array()))
 
 ## Corrige la predicción: parte del estado del servidor y rehace las entradas que aún no ha procesado.
@@ -438,7 +461,9 @@ func _reconcile(me: PackedFloat32Array, ack: int) -> void:
 		_shake = 6.0
 	_hp_total = total
 	while not _pending.is_empty() and _pending[0]["s"] <= ack:
-		_pending.pop_front()
+		var done: Dictionary = _pending.pop_front()
+		if done["s"] == ack:
+			_rtt = lerpf(_rtt, _time - done["sent"], 0.2)
 	var unconfirmed_shots := 0
 	for input in _pending:
 		if input["shot"] and _me_value(20) <= 0.0:
@@ -465,6 +490,9 @@ func _update_hud_from_me(me: PackedFloat32Array) -> void:
 	_hud.armor = me[11]
 	_hud.ammo = _ammo
 	_hud.reload_left = me[8]
+	if _was_reloading and me[8] <= 0.0 and _alive:
+		_audio.play("reload", -6.0)
+	_was_reloading = me[8] > 0.0
 	_hud.missiles = int(me[15])
 	_hud.special_ammo = int(me[20])
 	_hud.set_dead(not _alive)
@@ -558,20 +586,28 @@ func _update_bullets(data: PackedFloat32Array, tk: int) -> void:
 		var id := int(data[i])
 		var mine := data[i + 5] > 0.5
 		var seq := int(data[i + 6])
+		if not mine and not _known_bullets.has(id):
+			_known_bullets[id] = true
+			_audio.play_at("shot_special" if data[i + 7] > 0.5 else "shot", Vector2(data[i + 1], data[i + 2]), -6.0)
 		_server_bullets[id] = {"pos": Vector2(data[i + 1], data[i + 2]), "vel": Vector2(data[i + 3], data[i + 4]), "tk": tk,
 			"mine": mine, "seq": seq, "special": data[i + 7] > 0.5}
 		present[id] = true
 		if mine and seq >= 0 and not _confirmed.has(seq):
-			# El servidor ya tiene este disparo: las balas predichas dejan paso a las suyas
+			# El servidor ya tiene este disparo: las balas predichas dejan paso a las suyas. Si el número
+			# no casa con ninguna, se casa por dirección (por si el servidor tuvo que juntar entradas).
 			_confirmed[seq] = true
-			for b in _local_bullets:
-				if b["seq"] == seq:
-					_trails.erase(b["key"])
-			_local_bullets = _local_bullets.filter(func(b): return b["seq"] != seq)
+			var dir := Vector2(data[i + 3], data[i + 4]).normalized()
+			var matched := _local_bullets.filter(func(b): return b["seq"] == seq)
+			if matched.is_empty():
+				matched = _local_bullets.filter(func(b): return absf((b["dir"] as Vector2).angle_to(dir)) < 0.06)
+			for b in matched:
+				_trails.erase(b["key"])
+				_local_bullets.erase(b)
 	for id in _server_bullets.keys():
 		if not present.has(id):
 			_trails.erase("b%d" % id)
 			_server_bullets.erase(id)
+			_known_bullets.erase(id)
 
 func _update_missiles(data: PackedFloat32Array, tk: int) -> void:
 	var present := {}
@@ -579,6 +615,7 @@ func _update_missiles(data: PackedFloat32Array, tk: int) -> void:
 		var id := int(data[i])
 		var m: Dictionary = _missiles.get(id, {})
 		if m.is_empty():
+			_audio.play_at("missile_launch", Vector2(data[i + 1], data[i + 2]), -2.0)
 			var view := MissileView.new()
 			_ship_layer.add_child(view)
 			m = {"view": view}
@@ -604,30 +641,43 @@ func _play_events(ev: PackedFloat32Array) -> void:
 		match kind:
 			Ev.HIT_ROCK:
 				fx.setup(Fx.Kind.SPARK, Neon.ROCK_LINE.lightened(0.3))
+				_audio.play_at("hit_rock", pos, -6.0)
 			Ev.HIT_SHIP:
 				fx.setup(Fx.Kind.SHIP_HIT, Color("#FF6B8B"))
+				_audio.play_at("hit_ship", pos, 0.0 if mine else -3.0)
 			Ev.BOOM:
 				fx.setup(Fx.Kind.EXPLOSION, _me.color if mine else Color("#FF6B8B"))
+				_audio.play_at("ship_destroyed", pos, 2.0)
 				if mine:
 					_shake = 14.0
 			Ev.BUMP:
 				fx.setup(Fx.Kind.BUMP, Neon.WHITE)
+				_audio.play_at("bump", pos, -2.0)
 			Ev.SPAWN:
 				fx.setup(Fx.Kind.SPAWN, _me.color if mine else Neon.WHITE)
+				if mine:
+					_audio.play("spawn", -6.0)
 			Ev.BLAST:
 				fx.setup(Fx.Kind.BLAST, Color("#FF9F43"), extra)
+				_audio.play_at("blast_big" if extra > 150.0 else "blast_small", pos, 3.0 if extra > 150.0 else -1.0)
 				_shake = maxf(_shake, clampf(extra / 20.0, 3.0, 12.0) * (1.0 if _me.position.distance_to(pos) < 900.0 else 0.0))
 			Ev.ROCK_BREAK:
 				fx.setup(Fx.Kind.EXPLOSION, ROCK_BREAK_COLOR)
+				_audio.play_at("rock_break", pos, -2.0)
 			Ev.PICKUP:
 				fx.setup(Fx.Kind.SPAWN, Art.color_of(int(extra)))
 				if mine:
 					_hud.toast(PU.NAMES.get(int(extra), ""), Art.color_of(int(extra)))
+					_audio.play("pickup", -4.0)
+				else:
+					_audio.play_at("pickup", pos, -10.0)
 			Ev.CRATE_BREAK:
 				fx.setup(Fx.Kind.BLAST, Color("#FFE066"), 90.0)
 				_crate.visible = false
+				_audio.play_at("crate_break", pos, 0.0)
 			Ev.REFLECT:
 				fx.setup(Fx.Kind.SPARK, Color("#FFE066"))
+				_audio.play_at("reflect", pos, -4.0)
 		_fx_layer.add_child(fx)
 
 # ── Vistas ───────────────────────────────────────────────
@@ -669,6 +719,7 @@ func _update_views(delta: float) -> void:
 	_update_glows(my_pos)
 	_update_fog(my_pos, vp)
 	_update_reveals(vp)
+	_update_audio(delta, focus)
 	_radar_layer.queue_redraw()
 	_glitch = move_toward(_glitch, 1.0 if not _ghosts.is_empty() else 0.0, delta * 3.0)
 	_glitch_rect.visible = _glitch > 0.0
@@ -676,6 +727,22 @@ func _update_views(delta: float) -> void:
 	_bg_mat.set_shader_parameter("screen_size", vp)
 	_bg_mat.set_shader_parameter("cam_pos", focus)
 	_bg_mat.set_shader_parameter("zoom", zoom)
+
+## Motor y misil en bucle, y ruidos lejanos (delación) amortiguados desde su dirección.
+func _update_audio(delta: float, listener: Vector2) -> void:
+	_engine_power = move_toward(_engine_power, 1.0 if _move != Vector2.ZERO and _alive else 0.0, delta * 4.0)
+	_audio.set_engine(_engine_power, _pred["overload"])
+	_audio.set_missile_loop(_my_missile_pos() != Vector2.INF)
+	for n in _noises:
+		var key := "%d_%d_%d" % [roundi(n["pos"].x / 8.0), roundi(n["pos"].y / 8.0), n["kind"]]
+		if _heard.has(key):
+			continue
+		_heard[key] = _time
+		if (n["pos"] as Vector2).distance_to(listener) > DISTANT_NOISE and _time - n["born"] < 0.5:
+			_audio.play_distant("shot" if n["kind"] == Config.NOISE_SHOT else "bump", n["pos"], listener)
+	for key in _heard.keys():
+		if _time - _heard[key] > Config.REVEAL_TIME + 1.0:
+			_heard.erase(key)
 
 ## Lo que deja de llegar se desvanece y se borra; `place` coloca cada vista.
 func _fade_entities(dict: Dictionary, delta: float, speed: float, place: Callable) -> void:
@@ -765,7 +832,10 @@ func _update_bullet_views(delta: float) -> void:
 			to = from.lerp(to, blocked)
 		b["pos"] = to
 		_extend_trail(b["key"], to, blocked >= 0.0 or b["travelled"] >= Config.BULLET_RANGE)
-		if blocked < 0.0 and b["travelled"] < Config.BULLET_RANGE and _time - b["born"] < LOCAL_BULLET_TIMEOUT + 1.0:
+		# Una bala predicha que el servidor no confirma a tiempo (disparo rechazado) desaparece
+		var expired: bool = _time - b["born"] > _rtt + LOCAL_BULLET_GRACE and _confirmed.has(b["seq"])
+		var lost: bool = _time - b["born"] > _rtt * 2.0 + LOCAL_BULLET_GRACE * 2.0
+		if blocked < 0.0 and b["travelled"] < Config.BULLET_RANGE and not expired and not lost:
 			alive_local.append(b)
 			items.append({"pos": to, "dir": b["dir"], "mine": true, "special": b["special"]})
 	_local_bullets = alive_local
@@ -908,7 +978,9 @@ func _add_seg(seg_a: PackedVector4Array, seg_b: PackedVector4Array, xf: Transfor
 	seg_b.append(Vector4(sb.x, sb.y, radius, k))
 
 ## Radar: puntos verdes que parpadean donde aproximadamente están los rivales, y la onda del sonar.
+## También la flecha alrededor de la nave que apunta al power-up más cercano.
 func _draw_radar() -> void:
+	_draw_pickup_arrow()
 	var green := Color("#86F730")
 	var since_ping := _time - _last_ping
 	if since_ping < 1.2 and _alive:
@@ -919,6 +991,26 @@ func _draw_radar() -> void:
 		var a := (1.0 - age / Config.RADAR_SHOW) * (0.55 + 0.45 * absf(sin(age * 9.0)))
 		Neon.glow_circle(_radar_layer, p["pos"], 4.0, Color(green, a), 1.3)
 		_radar_layer.draw_arc(p["pos"], 12.0 + age * 18.0, 0.0, TAU, 24, Color(green, a * 0.5), 1.2, true)
+
+## Chevrón del color del power-up más cercano, girando alrededor de la nave hacia él. Se apaga
+## cuando ya está a la vista.
+func _draw_pickup_arrow() -> void:
+	if not _alive or _nearest_pickup.size() < 3:
+		return
+	var target := Vector2(_nearest_pickup[0], _nearest_pickup[1])
+	var to := target - _me.position
+	var dist := to.length()
+	var near := Config.VISION_RADIUS * _me_value(12, 1.0) * 0.8
+	var alpha := clampf((dist - near) / 200.0, 0.0, 1.0) * (0.75 + 0.25 * sin(_time * 4.0))
+	if alpha <= 0.0:
+		return
+	var dir := to / dist
+	var col := Color(Art.color_of(int(_nearest_pickup[2])), alpha)
+	var tip := _me.position + dir * 52.0
+	var side := dir.orthogonal()
+	var pts := PackedVector2Array([tip, tip - dir * 9.0 + side * 7.0, tip - dir * 5.0, tip - dir * 9.0 - side * 7.0])
+	_radar_layer.draw_colored_polygon(pts, col)
+	_radar_layer.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), Color(col, alpha * 0.5), 1.0, true)
 
 ## Flechas de ruido: en el borde de la pantalla apuntando a la fuente, o un aro si está a la vista.
 func _update_reveals(vp: Vector2) -> void:

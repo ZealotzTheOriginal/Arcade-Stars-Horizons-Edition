@@ -65,4 +65,31 @@ static func build_theme() -> Theme:
 	t.set_color("font_pressed_color", "Button", FG)
 	t.set_color("font_hover_pressed_color", "Button", FG)
 	t.set_stylebox("panel", "PanelContainer", box(Color(PANEL, 0.97), RADIUS, 26))
+	# Deslizadores: pista fina, parte llena en acento y tirador redondo
+	var track := box(BUTTON, 2)
+	track.content_margin_top = 2
+	track.content_margin_bottom = 2
+	t.set_stylebox("slider", "HSlider", track)
+	var fill := box(ACCENT, 2)
+	fill.content_margin_top = 2
+	fill.content_margin_bottom = 2
+	t.set_stylebox("grabber_area", "HSlider", fill)
+	t.set_stylebox("grabber_area_highlight", "HSlider", fill)
+	t.set_icon("grabber", "HSlider", _dot(14, FG))
+	t.set_icon("grabber_highlight", "HSlider", _dot(14, ACCENT))
+	# Barra de desplazamiento fina
+	t.set_stylebox("scroll", "VScrollBar", StyleBoxEmpty.new())
+	t.set_stylebox("grabber", "VScrollBar", box(Color(FG, 0.22), 99))
+	t.set_stylebox("grabber_highlight", "VScrollBar", box(Color(FG, 0.38), 99))
+	t.set_stylebox("grabber_pressed", "VScrollBar", box(Color(FG, 0.5), 99))
 	return t
+
+## Círculo antialiasado para el tirador de los deslizadores.
+static func _dot(px: int, color: Color) -> ImageTexture:
+	var img := Image.create(px, px, false, Image.FORMAT_RGBA8)
+	var c := (px - 1) / 2.0
+	for y in px:
+		for x in px:
+			var d := Vector2(x - c, y - c).length()
+			img.set_pixel(x, y, Color(color, clampf(c - d + 0.5, 0.0, 1.0)))
+	return ImageTexture.create_from_image(img)

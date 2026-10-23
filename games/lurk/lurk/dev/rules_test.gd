@@ -100,6 +100,7 @@ func _initialize() -> void:
 	_check("tunnels light for everyone", not l3._sources(2)["segs"].is_empty() or not l3.lights.is_empty())
 
 	_extra_checks()
+	_final_checks()
 	print("RESULT: %s" % ("ALL PASSED" if failures == 0 else "%d FAILED" % failures))
 	quit(1 if failures else 0)
 
@@ -186,3 +187,21 @@ func _extra_checks() -> void:
 	lo._apply_powerup(1, PU.Kind.OVERLOAD)
 	_ticks(lo, 1)
 	_check("overload: special ammo and fast ship", lo.players[1]["special_ammo"] == Config.OVERLOAD_AMMO and lo.players[1]["ship"]["overload"])
+
+## Bloque final: el disparo conserva su número al juntar entradas; flecha al power-up más cercano.
+func _final_checks() -> void:
+	var l = _setup()
+	# 10 entradas seguidas sin procesar: el servidor descarta las viejas y junta el disparo
+	var fire_seq := 0
+	for k in 10:
+		seqs[1] += 1
+		var fire := k == 0
+		if fire:
+			fire_seq = seqs[1]
+		l.handle_input(1, {"s": seqs[1], "m": Vector2.ZERO, "a": 0.0, "f": fire})
+	_input_for(l, 2, PI)
+	l.tick(1.0 / Config.TICK_RATE)
+	_check("merged shot keeps its own input number", not l.bullets.is_empty() and l.bullets[0]["seq"] == fire_seq, str(l.bullets[0]["seq"] if not l.bullets.is_empty() else -1))
+	var st: Dictionary = l.state_for(1)
+	_check("nearest power-up is sent", st["np"].size() == 3)
+	_check("10 power-ups on the base map", l.pickups.size() == Config.POWERUP_BASE)

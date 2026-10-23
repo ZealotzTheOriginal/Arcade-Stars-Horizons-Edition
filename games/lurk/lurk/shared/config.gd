@@ -44,7 +44,7 @@ const VISION_MARGIN := 140.0         # se envía un poco más allá para que lo 
 const MAX_HP := 3.0
 const DAMAGED_HP := 1.5
 const BULLET_DAMAGE := 1.5
-const HARD_HIT_DAMAGE := 1.0         # choque a >= 50 % de la velocidad máxima (delata)
+const HARD_HIT_DAMAGE := 0.5         # choque a >= 50 % de la velocidad máxima (delata)
 const SOFT_HIT_DAMAGE := 0.1         # choque más suave (silencioso)
 const SOFT_HIT_MIN_SPEED := 60.0     # por debajo, rozar no hace daño
 const HIT_COOLDOWN := 0.5            # un mismo contacto no resta vida varias veces seguidas
@@ -53,7 +53,7 @@ const RESPAWN_INVULNERABLE := 2.0    # se pierde al disparar
 
 # ── Disparo ──────────────────────────────────────────────
 const AMMO := 3
-const RELOAD_TIME := 5.0             # solo al vaciar el cargador (no hay recarga manual)
+const RELOAD_TIME := 3.0             # solo al vaciar el cargador (no hay recarga manual)
 const FIRE_COOLDOWN := 0.28
 const BULLET_SPEED := 1650.0
 const BULLET_RANGE := 1500.0
@@ -75,6 +75,7 @@ static func map_size_for(players: int) -> float:
 # ── Ruido (delación) ─────────────────────────────────────
 const HEARING_RANGE := 1800.0        # choques entre asteroides: se "oyen" hasta aquí
 const ROCK_NOISE_MIN_SPEED := 3.0
+const ROCK_NOISE_MIN_R := 80.0       # solo suenan los choques entre asteroides grandes
 const ROCK_NOISE_COOLDOWN := 3.0
 const NOISE_SHOT := 0
 const NOISE_CRASH := 1
@@ -84,10 +85,11 @@ const BLAST_FLASH_TIME := 0.8
 const DEBRIS_SPEED := 28.0           # empuje de los trozos de una roca partida
 
 # ── Power-ups ────────────────────────────────────────────
-const POWERUP_BASE := 5              # en el mapa con hasta BASE_PLAYERS jugadores (+1 por jugador extra)
+const POWERUP_BASE := 10             # en el mapa con hasta BASE_PLAYERS jugadores
+const POWERUP_PER_PLAYER := 2        # por cada jugador por encima de BASE_PLAYERS
 const POWERUP_RADIUS := 16.0
 const POWERUP_RESPAWN := 15.0
-const POWERUP_SPACING := 1300.0      # siempre alejados entre sí
+const POWERUP_SPACING := 1000.0      # siempre alejados entre sí
 const VISOR_MULT := 1.25
 const RADAR_INTERVAL := 4.0
 const RADAR_JITTER := 140.0          # posición aproximada

@@ -200,7 +200,10 @@ func handle_input(pid: int, p: Dictionary) -> void:
 		"f": p.get("f", false) == true, "ms": p.get("ms", false) == true, "r": p.get("r", false) == true})
 	while queue.size() > Config.MAX_QUEUED_INPUTS:
 		var dropped: Dictionary = queue.pop_front()
-		# Las acciones puntuales no se pierden aunque se descarte la entrada
+		# Las acciones puntuales no se pierden aunque se descarte la entrada. El disparo conserva el
+		# número de la entrada que lo hizo ("fs"): el cliente lo usa para casar su bala predicha.
+		if dropped["f"] and not queue[0]["f"]:
+			queue[0]["fs"] = dropped.get("fs", dropped["s"])
 		for k in ["f", "ms", "r"]:
 			queue[0][k] = queue[0][k] or dropped[k]
 
@@ -260,7 +263,7 @@ func _step_player(pid: int, dt: float) -> void:
 			_detonate(missile)
 	else:
 		if input.get("f", false):
-			_fire(pid, pl["ack"])
+			_fire(pid, input.get("fs", pl["ack"]))
 		if input.get("ms", false) and pl["missiles"] > 0:
 			_launch_missile(pid)
 	var ship: Dictionary = pl["ship"]
@@ -611,8 +614,9 @@ func _step_asteroids(dt: float) -> void:
 				var a: Dictionary = asteroids[i]
 				var b: Dictionary = asteroids[j]
 				var impact := Physics.collide_asteroids(a, b)
-				# Un choque entre rocas suena (se oye de cerca)
-				if impact > Config.ROCK_NOISE_MIN_SPEED and time > a["noise_at"] and time > b["noise_at"]:
+				# Un choque entre rocas grandes suena (se oye de cerca)
+				var big: bool = a["r"] >= Config.ROCK_NOISE_MIN_R and b["r"] >= Config.ROCK_NOISE_MIN_R
+				if big and impact > Config.ROCK_NOISE_MIN_SPEED and time > a["noise_at"] and time > b["noise_at"]:
 					a["noise_at"] = time + Config.ROCK_NOISE_COOLDOWN
 					b["noise_at"] = time + Config.ROCK_NOISE_COOLDOWN
 					var contact: Vector2 = (a["pos"] as Vector2).lerp(b["pos"], a["r"] / (a["r"] + b["r"]))
@@ -667,7 +671,7 @@ func _step_gems() -> void:
 # ── Power-ups y caja de la Sobrecarga ────────────────────
 
 func _pickup_target() -> int:
-	return Config.POWERUP_BASE + maxi(0, _humans() - Config.BASE_PLAYERS)
+	return Config.POWERUP_BASE + maxi(0, _humans() - Config.BASE_PLAYERS) * Config.POWERUP_PER_PLAYER
 
 ## Mantiene el número de power-ups normales en el mapa (activos o esperando a reaparecer).
 func _fill_pickups() -> void:
@@ -968,7 +972,14 @@ func state_for(pid: int) -> Dictionary:
 	for e in events:
 		if tick_count - e["tick"] < SNAPSHOT_EVERY and (e["who"] == pid or _is_lit(src, e["pos"], 60.0 + e["extra"])):
 			ev.append_array([e["kind"], e["pos"].x, e["pos"].y, 1.0 if e["who"] == pid else 0.0, e["extra"]])
-	var out := {"tk": tick_count, "sz": size, "ack": pl["ack"], "me": me, "sh": ships, "as": ast, "gm": gm,
+	# Power-up más cercano (la flecha alrededor de la nave): [x, y, tipo]
+	var np := PackedFloat32Array()
+	var best := INF
+	for p in pickups:
+		if p["active"] and eye.distance_to(p["pos"]) < best:
+			best = eye.distance_to(p["pos"])
+			np = PackedFloat32Array([p["pos"].x, p["pos"].y, p["kind"]])
+	var out := {"tk": tick_count, "sz": size, "ack": pl["ack"], "me": me, "np": np, "sh": ships, "as": ast, "gm": gm,
 		"pu": pu, "cr": cr, "bl": bl, "ms": ms, "fl": fl, "nz": nz, "rd": rd, "ev": ev, "sc": pl["score"]}
 	if not shapes.is_empty():
 		out["ash"] = shapes

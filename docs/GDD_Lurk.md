@@ -45,3 +45,11 @@ Aclaraciones del diseño tras la primera revisión. Prevalecen sobre las seccion
 * **Explosivos y asteroides:** la Carga Explosiva (09) y el misil **esculpen** los asteroides: el cráter tiene borde irregular y, si la roca se parte, los trozos se separan; los fragmentos diminutos se desintegran. Las balas normales no les hacen nada. El misil, por su radio, alcanza varios asteroides.
 * **Controles del misil:** clic derecho lo lanza (si tienes uno); se guía con el ratón; clic izquierdo lo detona donde esté.
 * **Sobrecarga:** su caja aguanta tres balas; la Sobrecarga liberada deriva despacio y, al cogerla, la caja reaparece 45 s después en otro sitio.
+
+### 8.8. Ajustes tras la primera prueba (24/10/2026)
+* **Power-ups:** el doble — **10** en el mapa base (+2 por cada jugador por encima de 5). Una **flecha alrededor de la nave** (del color del power-up) apunta al más cercano.
+* **Ruido de asteroides:** solo suena el choque entre **dos asteroides grandes**.
+* **Recarga:** **3 s** (antes 5).
+* **Choque fuerte:** resta **0.5** (antes 1).
+* **Menú de Escape:** volumen general / efectos / ambiente, controles reasignables (moverse, disparar, misil) y pantalla (ventana o completa); se guarda en el dispositivo.
+* **Sonido:** efectos de Kenney (CC0, ver `games/lurk/lurk/assets/sfx/CREDITS.txt`); los ruidos lejanos se oyen amortiguados desde su dirección; ambiente espacial generado por código; zumbido del motor propio.
