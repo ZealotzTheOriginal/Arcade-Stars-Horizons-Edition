@@ -1,7 +1,7 @@
 class_name LibraryView
 extends PanelContainer
 ## Biblioteca: cada juego del catálogo con su estado (instalado, actualización, no instalado)
-## y botones para descargarlo o actualizarlo desde GitHub Releases.
+## y botones para descargarlo o actualizarlo desde GitHub Releases, o desinstalarlo.
 
 const WARN_COLOR := Color("#FFD166")
 const ERROR_COLOR := Color("#FF7A8A")
@@ -56,6 +56,8 @@ func _ready() -> void:
 	Backend.catalog_changed.connect(refresh)
 	Updater.download_progress.connect(_on_progress)
 	Updater.download_finished.connect(_on_finished)
+	Net.connected_to_room.connect(refresh)
+	Net.left_room.connect(func(_r): refresh())
 	refresh()
 
 func refresh() -> void:
@@ -98,16 +100,13 @@ func _game_card(id: String) -> Control:
 		bar.max_value = 100.0
 		_bars[id] = bar
 		h.add_child(bar)
-	elif state == "installed":
-		var ok := CapsLabel.new()
-		ok.theme_type_variation = "MutedLabel"
-		ok.text = "Installed"
-		ok.add_theme_color_override("font_color", Palette.ACC_GREEN)
-		ok.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		h.add_child(ok)
-	elif Updater.game_download(id).is_empty():
-		card.modulate.a = 0.5    # sin descarga disponible: fila atenuada, sin botón
-	else:
+		return card
+	if state == "pending":
+		h.add_child(_state_label("Restart to apply", WARN_COLOR))
+		return card
+	if state == "installed":
+		h.add_child(_state_label("Installed", Palette.ACC_GREEN))
+	elif not Updater.game_download(id).is_empty():
 		var b := Button.new()
 		b.theme_type_variation = "CompactButton"
 		b.text = "UPDATE" if state == "update" else "DOWNLOAD"
@@ -117,7 +116,44 @@ func _game_card(id: String) -> Control:
 			Updater.download_game(id)
 			refresh())
 		h.add_child(b)
+	elif state == "missing":
+		card.modulate.a = 0.5    # sin descarga disponible: fila atenuada, sin botón
+	if GameLoader.is_installed(id):
+		h.add_child(_uninstall_button(id))
 	return card
+
+func _state_label(text: String, color: Color) -> Label:
+	var l := CapsLabel.new()
+	l.theme_type_variation = "MutedLabel"
+	l.text = text
+	l.add_theme_color_override("font_color", color)
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return l
+
+## Desinstalar pide una segunda pulsación (el botón pasa a CONFIRM unos segundos).
+## Dentro de una party no se puede: el juego podría estar en uso.
+func _uninstall_button(id: String) -> Button:
+	var b := Button.new()
+	b.theme_type_variation = "CompactButton"
+	b.text = "UNINSTALL"
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.disabled = Net.in_room
+	b.pressed.connect(func():
+		if b.text != "CONFIRM":
+			b.text = "CONFIRM"
+			b.add_theme_color_override("font_color", ERROR_COLOR)
+			b.add_theme_color_override("font_hover_color", ERROR_COLOR)
+			get_tree().create_timer(3.0).timeout.connect(func():
+				if is_instance_valid(b):
+					b.text = "UNINSTALL"
+					b.remove_theme_color_override("font_color")
+					b.remove_theme_color_override("font_hover_color"))
+			return
+		var ok := GameLoader.uninstall(id)
+		_message.text = "" if ok else "Could not remove every file"
+		_message.add_theme_color_override("font_color", ERROR_COLOR)
+		refresh())
+	return b
 
 func _on_progress(key: String, received: int, total: int) -> void:
 	if _bars.has(key) and total > 0:

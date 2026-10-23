@@ -28,6 +28,27 @@ var last_leave_reason := ""
 
 func _ready() -> void:
 	Backend.message.connect(_on_message)
+	_load_local_name()
+
+# ── Nickname guardado en el dispositivo (por perfil) ─────
+
+func _player_config_path() -> String:
+	return "user://player_%s.cfg" % AppConfig.profile().validate_filename()
+
+func _load_local_name() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(_player_config_path()) == OK:
+		var saved: String = str(cfg.get_value("player", "nickname", ""))
+		if is_valid_nickname(saved):
+			local_name = saved
+
+## Cambia el nickname local y lo recuerda entre sesiones.
+func save_local_name(value: String) -> void:
+	local_name = value
+	var cfg := ConfigFile.new()
+	cfg.load(_player_config_path())
+	cfg.set_value("player", "nickname", value)
+	cfg.save(_player_config_path())
 
 func is_host() -> bool:
 	return in_room and room.get("host_id", 0) == my_id()

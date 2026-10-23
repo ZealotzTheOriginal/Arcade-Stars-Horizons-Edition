@@ -13,6 +13,7 @@ enum Mode { BAR, PILL, HIDDEN }
 const HEIGHT := 36
 const PILL_BUTTON := Vector2(34, 28)
 const CORNER_RADIUS := 10.0
+const LOGO_SIZE := 22.0
 ## Tamaños lógicos (antes de aplicar el DPI). "large" es el predeterminado.
 const SIZES := {"large": Vector2(1280, 720), "small": Vector2(1024, 576)}
 const UI_CONFIG := "user://ui.cfg"
@@ -27,6 +28,7 @@ var _confirm: Control
 var _confirm_text: Label
 var _bar: PanelContainer
 var _pill: PanelContainer
+var _logo: TextureRect
 
 func _ready() -> void:
 	layer = 100
@@ -116,14 +118,16 @@ func _place_window(size: Vector2i, center: Vector2i = Vector2i(-1, -1)) -> void:
 
 func _on_dpi_changed() -> void:
 	get_window().content_scale_factor = ui_scale()
+	_update_logo()
 	if not _splash:
 		_place_window(_launcher_size(), DisplayServer.window_get_position() + DisplayServer.window_get_size() / 2)
 
 # ── Splash y entrada al launcher ─────────────────────────
 
 ## Splash: la ventana ya tiene el tamaño final del launcher y es transparente por píxel (el logo
-## flota sin ventana visible). Así no hay que redimensionarla al entrar al hub. Solo la zona central
-## recibe el ratón; el resto deja pasar los clics al escritorio.
+## flota sin ventana visible). Así no hay que redimensionarla al entrar al hub.
+## Sin zona de paso del ratón: en Windows se implementa con una región de ventana (SetWindowRgn) que,
+## con transparencia por píxel, se pinta opaca unos fotogramas al ponerla y al quitarla (destellos).
 func begin_splash() -> void:
 	_splash = true
 	var win := get_window()
@@ -131,17 +135,12 @@ func begin_splash() -> void:
 	get_viewport().transparent_bg = true
 	set_mode(Mode.HIDDEN)
 	_frame.visible = false
-	var size := _launcher_size()
-	_place_window(size)
-	var half := Vector2(380, 300) * ui_scale()
-	var c := Vector2(size) / 2.0
-	DisplayServer.window_set_mouse_passthrough(PackedVector2Array([c - half, Vector2(c.x + half.x, c.y - half.y), c + half, Vector2(c.x - half.x, c.y + half.y)]))
+	_place_window(_launcher_size())
 
 func end_splash() -> void:
 	if not _splash:
 		return
 	_splash = false
-	DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
 	_frame.visible = true
 	set_mode(Mode.BAR)
 	# La barra y el borde aparecen con el fundido del hub (ver enter_launcher), no antes.
@@ -162,9 +161,9 @@ func enter_launcher(hub: PackedScene) -> void:
 	var scene := get_tree().current_scene
 	if scene and scene.has_method("fade_in"):
 		scene.fade_in()
-	var tw := create_tween().set_parallel()
-	tw.tween_property(_bar, "modulate:a", 1.0, 0.35)
-	tw.tween_method(func(v: float): _frame_mat.set_shader_parameter("border_strength", v), 0.0, 1.0, 0.35)
+	var tw := create_tween().set_parallel().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(_bar, "modulate:a", 1.0, 0.45)
+	tw.tween_method(func(v: float): _frame_mat.set_shader_parameter("border_strength", v), 0.0, 1.0, 0.45)
 
 func _ensure_on_screen() -> void:
 	if _splash:
@@ -206,14 +205,13 @@ func _build_bar(root: Control) -> void:
 	pad.custom_minimum_size.x = 4
 	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_child(pad)
-	var logo := TextureRect.new()
-	logo.texture = load("res://assets/icons/logo.png")
-	logo.custom_minimum_size = Vector2(22, 22)
-	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	logo.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	h.add_child(logo)
+	_logo = TextureRect.new()
+	_logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_logo.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(_logo)
+	_update_logo()
 	var title := CapsLabel.new()
 	title.theme_type_variation = "HeadLabel"
 	title.add_theme_font_override("font", AppTheme.brand_font())
@@ -233,6 +231,12 @@ func _build_bar(root: Control) -> void:
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_child(spacer)
 	_add_window_buttons(h, Vector2(46, HEIGHT))
+
+## Logo de la barra a su tamaño físico exacto (22 px lógicos), para que no se vea pixelado.
+func _update_logo() -> void:
+	var px := roundi(LOGO_SIZE * ui_scale())
+	_logo.texture = AppTheme.crisp_logo(px)
+	_logo.custom_minimum_size = Vector2(px, px) / ui_scale()
 
 func _build_pill(root: Control) -> void:
 	_pill = PanelContainer.new()
@@ -287,7 +291,7 @@ func request_close() -> void:
 	if Net.in_game:
 		_confirm_text.text = "You will leave the current game"
 	elif Net.in_room:
-		_confirm_text.text = "You will leave the room"
+		_confirm_text.text = "You will leave the party"
 	_confirm_text.visible = Net.in_game or Net.in_room
 	_confirm.visible = true
 

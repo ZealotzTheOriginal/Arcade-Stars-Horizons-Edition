@@ -23,11 +23,17 @@ func _run() -> void:
 	var updater = root.get_node("Updater")
 	var loader = root.get_node("GameLoader")
 	var games_dir: String = loader.user_games_dir()
-	GameRegistry.set_catalog({"minesweeper": {"name": "Minesweeper", "version": "1.1.0", "min_players": 2, "max_players": 4, "settings": []}})
+	if not OS.get_environment("ASH_GAMES_DIR"):
+		print("ASH_GAMES_DIR is required (see header)")
+		quit(2)
+		return
 
 	updater.check()
 	await updater.manifest_changed
 	_check("manifest fetched", not updater.manifest.is_empty(), str(updater.manifest.get("games", {}).keys()))
+	# El catálogo exige justo la versión publicada en el manifest local
+	var version: String = updater.manifest.get("games", {}).get("minesweeper", {}).get("version", "0.0.0")
+	GameRegistry.set_catalog({"minesweeper": {"name": "Minesweeper", "version": version, "min_players": 1, "max_players": 4, "settings": []}})
 	_check("game state is missing", updater.game_state("minesweeper") == "missing")
 	_check("download entry available", not updater.game_download("minesweeper").is_empty())
 
@@ -35,8 +41,17 @@ func _run() -> void:
 	updater.download_finished.connect(func(k, ok, m): res.assign([k, ok, m]))
 	await updater.download_game("minesweeper")
 	_check("game download ok", not res.is_empty() and res[1], str(res))
-	_check("game installed", loader.is_installed("minesweeper") and loader.installed["minesweeper"]["version"] == "1.1.0")
+	_check("game installed", loader.is_installed("minesweeper") and loader.installed["minesweeper"]["version"] == version)
 	_check("game state is installed", updater.game_state("minesweeper") == "installed")
+
+	# Desinstalar y reinstalar en la misma sesión (lo montado no se sustituye en caliente)
+	_check("uninstall ok", loader.uninstall("minesweeper"))
+	_check("uninstalled", not loader.is_installed("minesweeper") and not FileAccess.file_exists(games_dir.path_join("minesweeper.pck")))
+	_check("state after uninstall is missing", updater.game_state("minesweeper") == "missing")
+	await updater.download_game("minesweeper")
+	_check("reinstall waits for restart", updater.game_state("minesweeper") == "pending" and updater.restart_pending)
+	loader._apply_pending_updates()
+	_check("reinstall applied at startup", FileAccess.file_exists(games_dir.path_join("minesweeper.pck")) and not loader.has_pending_update("minesweeper"))
 
 	var entry: Dictionary = updater.manifest["games"]["minesweeper"].duplicate()
 	entry["sha256"] = "0".repeat(64)

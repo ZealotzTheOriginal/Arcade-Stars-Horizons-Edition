@@ -4,6 +4,7 @@ class_name AppTheme
 ## importante y corto, menos para lo secundario. Paneles translúcidos SIN borde, acento verde lima.
 
 const FONT_BODY := preload("res://assets/fonts/Inter.ttf")
+const LOGO := preload("res://assets/icons/logo.png")
 
 const WEIGHT_LIGHT := 400
 const WEIGHT_REGULAR := 500
@@ -95,6 +96,29 @@ static func get_theme() -> Theme:
 	t.set_stylebox("pressed", "CompactButton", box(Palette.BG_300, Palette.ACC_BLUE, 10, 1, 12))
 	t.set_stylebox("disabled", "CompactButton", box(Palette.fade(Palette.BG_300, 0.5), Palette.fade(Palette.FG_100, 0.04), 10, 1, 12))
 
+	# Botones planos (ajustes): sin borde y casi cuadrados; solo el seleccionado (toggle) lleva borde.
+	t.add_type("FlatButton")
+	t.set_type_variation("FlatButton", "Button")
+	t.set_font_size("font_size", "FlatButton", 13)
+	t.set_stylebox("normal", "FlatButton", box(Palette.fade(Palette.BG_400, 0.9), Color.TRANSPARENT, 3, 0, 12))
+	t.set_stylebox("hover", "FlatButton", box(Palette.BG_400.lightened(0.1), Color.TRANSPARENT, 3, 0, 12))
+	var selected := box(Palette.BG_300, Palette.ACC_BLUE, 3, 1, 12)    # "pressed" = también el estado activo de un toggle
+	t.set_stylebox("pressed", "FlatButton", selected)
+	t.set_stylebox("hover_pressed", "FlatButton", selected)
+	t.set_stylebox("disabled", "FlatButton", box(Palette.fade(Palette.BG_300, 0.5), Color.TRANSPARENT, 3, 0, 12))
+
+	# Botón especial (AccentButton): fondo VOID y texto blanco; el borde animado lo dibuja su shader.
+	t.add_type("AccentButton")
+	t.set_type_variation("AccentButton", "Button")
+	t.set_font("font", "AccentButton", font(FONT_BODY, WEIGHT_BOLD, 1))
+	t.set_stylebox("normal", "AccentButton", box(Palette.VOID, Color.TRANSPARENT, 6, 0, 20))
+	t.set_stylebox("hover", "AccentButton", box(Palette.VOID.lightened(0.04), Color.TRANSPARENT, 6, 0, 20))
+	t.set_stylebox("pressed", "AccentButton", box(Palette.BLACK, Color.TRANSPARENT, 6, 0, 20))
+	t.set_stylebox("disabled", "AccentButton", box(Palette.fade(Palette.VOID, 0.7), Color.TRANSPARENT, 6, 0, 20))
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		t.set_color(c, "AccentButton", Palette.FG_100)
+	t.set_color("font_disabled_color", "AccentButton", Palette.fade(Palette.FG_100, 0.35))
+
 	t.add_type("DangerButton")
 	t.set_type_variation("DangerButton", "Button")
 	t.set_font("font", "DangerButton", font(FONT_BODY, WEIGHT_BOLD, 1))
@@ -156,6 +180,17 @@ static func get_theme() -> Theme:
 
 	_cached = t
 	return t
+
+## Logo de la app reducido (Lanczos) a `px` píxeles físicos. La GPU reduce sin filtrar bien una imagen
+## grande (512 px) y el resultado se ve pixelado; dibujado a su tamaño exacto queda nítido.
+static func crisp_logo(px: int) -> ImageTexture:
+	var img: Image = LOGO.get_image()
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	img.fix_alpha_edges()    # los píxeles transparentes toman el color vecino: sin halo al filtrar
+	img.resize(maxi(px, 1), maxi(px, 1), Image.INTERPOLATE_LANCZOS)
+	return ImageTexture.create_from_image(img)
 
 ## Caja con esquinas antialiasadas (sin borde, o con borde de 1 px en botones/campos).
 static func box(bg: Color, border: Color, radius: int, border_w: int = 0, pad: int = 0) -> StyleBoxFlat:

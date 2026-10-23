@@ -50,8 +50,11 @@ func game_download(game_id: String) -> Dictionary:
 		return {}
 	return entry
 
-## Estado de un juego para la biblioteca: "installed" | "update" | "missing".
+## Estado de un juego para la biblioteca: "installed" | "update" | "missing" | "pending" (descargado,
+## se aplica al reiniciar).
 func game_state(game_id: String) -> String:
+	if GameLoader.has_pending_update(game_id):
+		return "pending"
 	if not GameLoader.is_installed(game_id):
 		return "missing"
 	return "installed" if GameLoader.installed[game_id]["version"] == GameRegistry.version_of(game_id) else "update"
@@ -137,7 +140,7 @@ func download_game(game_id: String) -> void:
 	_busy[game_id] = true
 	var dest := GameLoader.user_games_dir().path_join(game_id + ".pck")
 	# Si ya hay una versión montada en esta sesión, no se puede sustituir en caliente.
-	var in_use := GameLoader.is_installed(game_id)
+	var in_use := GameLoader.is_mounted(game_id)
 	var err := await _download(game_id, entry, dest + ".update" if in_use else dest)
 	if err == "":
 		if in_use:

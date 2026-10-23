@@ -39,6 +39,10 @@ Al volver a la ventana del hub se detectan `.pck` recién copiados.
 **Biblioteca (pestaña *Library*):** muestra el catálogo que envía el servidor con el estado de cada juego
 (Installed / Update available / Not installed) y descarga o actualiza el `.pck` desde GitHub Releases
 (verificación SHA-256, solo desde el repo de releases). Si el juego ya estaba cargado, la actualización se aplica al reiniciar.
+*Uninstall* (con confirmación) borra el `.pck` de `user://games` y de `<exe>/games` (útil si un archivo se corrompe);
+reinstalarlo en la misma sesión también se aplica al reiniciar, porque el motor no desmonta un `.pck` ya cargado.
+
+El nickname elegido en *Settings* se guarda en el dispositivo (`user://player_<perfil>.cfg`).
 
 Un `.pck` ejecuta código: instala solo los que vengan de una fuente de confianza.
 El hub solo monta `.pck` cuyo nombre coincide con un juego del catálogo y cuyo `manifest.json` es válido.
@@ -125,9 +129,10 @@ launcher se actualiza solo y descarga los juegos desde la Biblioteca. Exportar a
 
 ## Iconos
 
-`assets/icons/icon.svg` es el original (blanco). `scripts/dev/make_icons.gd` lo rasteriza a `logo.png` y
-`tools/make_icons.py` lo compone sobre la placa oscura y genera `icon.png` (icono de ventana) e `icon.ico` (16–256 px,
-icono del `.exe`, referenciado en el preset de exportación). Windows necesita el ICO multi-tamaño; el PNG cuadrado sirve en ejecución.
+`assets/icons/logo.png` (512×512, con su fondo circular) es el logo original: lo usan la barra de título y el splash
+(reducido en tiempo de ejecución al tamaño físico exacto, para que se vea nítido). `python tools/make_icons.py` genera a
+partir de él `icon.png` (icono de ventana) e `icon.ico` (16–256 px, icono del `.exe`, referenciado en el preset de
+exportación). Windows necesita el ICO multi-tamaño; el PNG cuadrado sirve en ejecución.
 
 ## Despliegue del servidor
 

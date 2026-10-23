@@ -1,10 +1,9 @@
 extends Control
-## Splash inicial: el logo "flota" sobre el escritorio sin ventana visible (ventana con transparencia
+## Splash inicial: el logo aparece sobre el escritorio sin ventana visible (ventana con transparencia
 ## por píxel, ya con el tamaño final del launcher). Al terminar, el hub aparece en el sitio con un fundido.
 ## Clic o cualquier tecla la saltan. ASH_NO_SPLASH=1 la omite.
 
 const HUB_SCENE := "res://scenes/main.tscn"
-const LOGO := preload("res://assets/icons/logo.png")
 
 # Línea de tiempo (s): entrada suave y escalonada, pausa y salida. Total ≈ 4.1 s.
 const LOGO_IN := 1.6
@@ -49,7 +48,7 @@ func _ready() -> void:
 		})
 
 	_logo = TextureRect.new()
-	_logo.texture = LOGO
+	_logo.texture = AppTheme.crisp_logo(roundi(LOGO_SIZE * get_window().content_scale_factor))
 	_logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -93,15 +92,14 @@ func _center() -> Vector2:
 func _layout(t: float) -> void:
 	var c := _center()
 	var appear := _smooth(t / LOGO_IN)
-	var float_y := sin(t * 1.1) * 3.0
 	var logo_size := LOGO_SIZE * (0.88 + 0.12 * appear)
 	_logo.size = Vector2(logo_size, logo_size)
-	_logo.position = c - _logo.size / 2.0 + Vector2(0, float_y)
+	_logo.position = c - _logo.size / 2.0
 	_logo.modulate.a = appear
 	var title_in := _smooth((t - TITLE_START) / TITLE_IN)
 	_title_font.spacing_glyph = int(lerpf(18.0, 6.0, title_in))
 	_title.size = Vector2(size.x, TITLE_SIZE + 20)
-	_title.position = Vector2(0, c.y + 150 + float_y * 0.5 + (1.0 - title_in) * 10.0)
+	_title.position = Vector2(0, c.y + 150 + (1.0 - title_in) * 10.0)
 	_title.modulate.a = title_in
 
 func _draw_sparks() -> void:

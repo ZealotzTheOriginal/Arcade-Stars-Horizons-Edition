@@ -64,9 +64,9 @@ func _scale() -> float:
 
 ## Opacidad efectiva en el árbol (producto de los modulate de los ancestros). Se pasa al shader porque
 ## un shader que fija COLOR no hereda el modulate en Godot.
-func _tree_alpha() -> float:
+static func tree_alpha(item: CanvasItem) -> float:
 	var a := 1.0
-	var n: Node = self
+	var n: Node = item
 	while n:
 		if n is CanvasItem:
 			a *= (n as CanvasItem).modulate.a * (n as CanvasItem).self_modulate.a
@@ -74,7 +74,7 @@ func _tree_alpha() -> float:
 	return a
 
 func _process(delta: float) -> void:
-	var alpha := _tree_alpha()
+	var alpha := tree_alpha(self)
 	if alpha > 0.0:
 		_t += delta    # el reloj (destellos de nebulosa) no avanza mientras el fondo es invisible
 	var win_px := Vector2(get_window().size)

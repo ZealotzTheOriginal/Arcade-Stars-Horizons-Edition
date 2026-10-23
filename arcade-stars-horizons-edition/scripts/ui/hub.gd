@@ -1,5 +1,5 @@
 extends Control
-## Hub principal: presencia online, lista de salas y sala actual.
+## Hub principal: presencia online, lista de parties (salas) y party actual.
 
 const ROOM_NAMES := [
 	"Orion Nebula", "Pleiades Cluster", "Vega Horizon", "Sirius Orbit",
@@ -24,7 +24,7 @@ var _room_name_input: LineEdit
 var _library_view: Control
 var _settings_view: Control
 var _tab_buttons: Dictionary = {}    # nombre de pestaña -> Button
-var _tab := "rooms"
+var _tab := "party"
 var _users_panel: Control
 var _sidebar_toggle: SidebarToggle
 
@@ -66,7 +66,7 @@ func _on_sidebar_toggled(shown: bool) -> void:
 	cfg.save("user://ui.cfg")
 
 func fade_in() -> void:
-	create_tween().tween_property(self, "modulate:a", 1.0, 0.35)
+	create_tween().tween_property(self, "modulate:a", 1.0, 0.45).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 # ── Construcción de UI ───────────────────────────────────
 
@@ -110,7 +110,7 @@ func _build_nav() -> Control:
 	_sidebar_toggle.toggled.connect(_on_sidebar_toggled)
 	h.add_child(_sidebar_toggle)
 	var group := ButtonGroup.new()
-	for tab in [["rooms", "Rooms"], ["library", "Library"], ["settings", "Settings"]]:
+	for tab in [["party", "Party"], ["library", "Library"], ["settings", "Settings"]]:
 		var b := NavLink.new(tab[1])
 		b.button_group = group
 		b.button_pressed = tab[0] == _tab
@@ -161,19 +161,17 @@ func _build_lobby_view() -> Control:
 	v.add_child(top)
 	var t := CapsLabel.new()
 	t.theme_type_variation = "HeadLabel"
-	t.text = "Rooms"
+	t.text = "Party"
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(t)
 	_room_name_input = LineEdit.new()
 	_room_name_input.text = ROOM_NAMES.pick_random()
 	_room_name_input.max_length = 24
-	_room_name_input.placeholder_text = "ROOM NAME"
+	_room_name_input.placeholder_text = "PARTY NAME"
 	_room_name_input.custom_minimum_size.x = 150
 	_room_name_input.text_submitted.connect(func(_t): _on_create_pressed())
 	top.add_child(_room_name_input)
-	_create_btn = Button.new()
-	_create_btn.theme_type_variation = "PrimaryButton"
-	_create_btn.text = "CREATE ROOM"
+	_create_btn = AccentButton.new("CREATE PARTY")
 	_create_btn.pressed.connect(_on_create_pressed)
 	top.add_child(_create_btn)
 
@@ -186,7 +184,7 @@ func _build_lobby_view() -> Control:
 	scroll.add_child(inner)
 	_rooms_empty = CapsLabel.new()
 	_rooms_empty.theme_type_variation = "MutedLabel"
-	_rooms_empty.text = "No rooms yet"
+	_rooms_empty.text = "No parties yet"
 	inner.add_child(_rooms_empty)
 	_rooms_box = VBoxContainer.new()
 	_rooms_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -208,7 +206,7 @@ func _build_room_view() -> Control:
 	_room_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_room_title)
 	var leave := Button.new()
-	leave.text = "LEAVE ROOM"
+	leave.text = "LEAVE PARTY"
 	leave.pressed.connect(func(): Net.leave())
 	top.add_child(leave)
 
@@ -251,7 +249,7 @@ func _fill_game_select() -> void:
 		_game_select.set_item_metadata(_game_select.item_count - 1, id)
 
 func _show_view() -> void:
-	_lobby_view.visible = not Net.in_room and _tab == "rooms"
+	_lobby_view.visible = not Net.in_room and _tab == "party"
 	_library_view.visible = not Net.in_room and _tab == "library"
 	_settings_view.visible = not Net.in_room and _tab == "settings"
 	_room_view.visible = Net.in_room
@@ -272,9 +270,9 @@ func _refresh_users() -> void:
 	for id in Lobby.users:
 		var u: Dictionary = Lobby.users[id]
 		var is_me: bool = id == Net.my_id()
-		_users_box.add_child(_user_row(u["name"] + (" (you)" if is_me else ""), Palette.ACC_GREEN if is_me else Palette.ACC_BLUE, u["room_name"]))
+		_users_box.add_child(_user_row(u["name"] + (" (you)" if is_me else ""), Palette.ACC_GREEN if is_me else Palette.ACC_BLUE))
 
-func _user_row(uname: String, dot: Color, room_name: String) -> Control:
+func _user_row(uname: String, dot: Color) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var d := ColorRect.new()
@@ -287,13 +285,6 @@ func _user_row(uname: String, dot: Color, room_name: String) -> Control:
 	l.clip_text = true
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(l)
-	if room_name != "":
-		var r := CapsLabel.new()
-		r.theme_type_variation = "MutedLabel"
-		r.text = "● " + room_name
-		r.clip_text = true
-		r.custom_minimum_size.x = 100
-		row.add_child(r)
 	return row
 
 func _refresh_rooms() -> void:
@@ -332,7 +323,7 @@ func _room_card(r: Dictionary) -> Control:
 func _refresh_room() -> void:
 	if not Net.in_room:
 		return
-	_room_title.text = Net.room.get("name", "Room")
+	_room_title.text = Net.room.get("name", "Party")
 	var idx := 0
 	for i in _game_select.item_count:
 		if _game_select.get_item_metadata(i) == Net.room.get("game_id"):
@@ -430,7 +421,7 @@ func _default_game_id() -> String:
 func _on_create_pressed() -> void:
 	var rname := _room_name_input.text.strip_edges()
 	if RegEx.create_from_string(ROOM_NAME_PATTERN).search(rname) == null:
-		_set_status("Room name: 3-24 letters, numbers, spaces, - or _", true)
+		_set_status("Party name: 3-24 letters, numbers, spaces, - or _", true)
 		return
 	if GameRegistry.games.is_empty():
 		return

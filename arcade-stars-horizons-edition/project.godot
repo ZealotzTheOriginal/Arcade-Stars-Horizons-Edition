@@ -11,13 +11,13 @@ config_version=5
 [application]
 
 config/name="Arcade Stars Horizons Edition"
-config/version="1.1.1"
+config/version="1.2.0"
 run/main_scene="res://scenes/splash.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+boot_splash/bg_color=Color(0, 0, 0, 0)
+boot_splash/show_image=false
 config/icon="res://assets/icons/icon.png"
 config/windows_native_icon="res://assets/icons/icon.ico"
-boot_splash/show_image=false
-boot_splash/bg_color=Color(0.0118, 0.0118, 0.0549, 1)
 
 [autoload]
 
@@ -35,9 +35,9 @@ window/size/viewport_width=8
 window/size/viewport_height=8
 window/size/borderless=true
 window/size/transparent=true
-window/per_pixel_transparency/allowed=true
 window/size/window_width_override=8
 window/size/window_height_override=8
+window/per_pixel_transparency/allowed=true
 
 [physics]
 
@@ -45,8 +45,8 @@ window/size/window_height_override=8
 
 [rendering]
 
-environment/defaults/default_clear_color=Color(0.0118, 0.0118, 0.0549, 1)
-viewport/transparent_background=true
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0, 0, 0, 0)
+viewport/transparent_background=true

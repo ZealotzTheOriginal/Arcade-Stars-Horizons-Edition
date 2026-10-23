@@ -16,6 +16,7 @@ var installed: Dictionary = {}
 
 var _infos: Dictionary = {}      # "<ruta>@<mtime>" -> manifest validado ({} si es inválido)
 var _active: Dictionary = {}     # id -> clave del .pck montado en último lugar (el que "gana")
+var _uninstalled: Dictionary = {}  # id -> true: desinstalado en esta sesión, pero aún montado en memoria
 var _ctx: GameContext
 
 func _ready() -> void:
@@ -43,6 +44,12 @@ func user_games_dir() -> String:
 	var from_env := OS.get_environment("ASH_GAMES_DIR")
 	return from_env if from_env != "" else ProjectSettings.globalize_path("user://games")
 
+## Carpetas de las que se puede desinstalar (no incluye la de compilación del editor).
+func install_dirs() -> Array[String]:
+	if OS.get_environment("ASH_GAMES_DIR") != "":
+		return [user_games_dir()]
+	return [user_games_dir(), OS.get_executable_path().get_base_dir().path_join("games")]
+
 func search_dirs() -> Array[String]:
 	if OS.get_environment("ASH_GAMES_DIR") != "":
 		return [user_games_dir()]
@@ -60,6 +67,30 @@ func installed_versions() -> Dictionary:
 
 func is_installed(game_id: String) -> bool:
 	return installed.has(game_id)
+
+## Un .pck que ya se montó en esta sesión no se puede sustituir en caliente (el motor no lo desmonta):
+## lo nuevo se descarga como `.pck.update` y se aplica al reiniciar.
+func is_mounted(game_id: String) -> bool:
+	return installed.has(game_id) or _uninstalled.has(game_id)
+
+func has_pending_update(game_id: String) -> bool:
+	return FileAccess.file_exists(user_games_dir().path_join(game_id + ".pck.update"))
+
+## Desinstala un juego: borra sus .pck (y descargas pendientes) de las carpetas de instalación.
+## Devuelve false si algún archivo no se pudo borrar (p. ej. una carpeta sin permisos de escritura).
+func uninstall(game_id: String) -> bool:
+	if not GameRegistry.is_valid_id(game_id):
+		return false
+	var ok := true
+	for dir in install_dirs():
+		for suffix in [".pck", ".pck.update", ".pck.update.part", ".pck.part"]:
+			var path := dir.path_join(game_id + suffix)
+			if FileAccess.file_exists(path) and DirAccess.remove_absolute(path) != OK:
+				ok = false
+	if _active.has(game_id):
+		_uninstalled[game_id] = true
+	scan()
+	return ok
 
 ## Reescanea las carpetas. Devuelve true si cambió lo instalado.
 func scan() -> bool:

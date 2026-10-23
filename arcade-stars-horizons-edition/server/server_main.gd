@@ -291,12 +291,12 @@ func _free_color(room: Dictionary) -> int:
 
 func _handle_room_create(pid: int, msg: Dictionary) -> void:
 	if _sessions[pid]["room_id"] != "":
-		_send_error(pid, "You are already in a room")
+		_send_error(pid, "You are already in a party")
 		return
 	var name: Variant = msg.get("name")
 	var game_id: Variant = msg.get("game_id")
 	if not (name is String) or _room_re.search((name as String).strip_edges()) == null:
-		_send_error(pid, "Invalid room name")
+		_send_error(pid, "Invalid party name")
 		return
 	if not (game_id is String) or not GameRegistry.has_game(game_id):
 		_send_error(pid, "Unknown game")
@@ -316,17 +316,17 @@ func _handle_room_create(pid: int, msg: Dictionary) -> void:
 
 func _handle_room_join(pid: int, msg: Dictionary) -> void:
 	if _sessions[pid]["room_id"] != "":
-		_send_error(pid, "You are already in a room")
+		_send_error(pid, "You are already in a party")
 		return
 	var room: Dictionary = _rooms.get(msg.get("room_id"), {}) if msg.get("room_id") is String else {}
 	if room.is_empty():
-		_send_error(pid, "Room not found")
+		_send_error(pid, "Party not found")
 		return
 	if room["in_game"]:
 		_send_error(pid, "Game already in progress")
 		return
 	if room["members"].size() >= GameRegistry.games[room["game_id"]]["max_players"]:
-		_send_error(pid, "Room is full")
+		_send_error(pid, "Party is full")
 		return
 	room["members"].append(pid)
 	room["colors"][pid] = _free_color(room)

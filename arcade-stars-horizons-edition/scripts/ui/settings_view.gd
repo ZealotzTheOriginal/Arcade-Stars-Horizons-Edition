@@ -34,6 +34,7 @@ func _ready() -> void:
 	_name_input.text_submitted.connect(func(_t): _apply_name())
 	row.add_child(_name_input)
 	var apply := Button.new()
+	apply.theme_type_variation = "FlatButton"
 	apply.text = "APPLY"
 	apply.pressed.connect(_apply_name)
 	row.add_child(apply)
@@ -43,6 +44,7 @@ func _ready() -> void:
 
 	v.add_child(_section("GAMES"))
 	var folder := Button.new()
+	folder.theme_type_variation = "FlatButton"
 	folder.text = "OPEN GAMES FOLDER"
 	folder.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	folder.pressed.connect(func():
@@ -57,7 +59,7 @@ func _ready() -> void:
 	var group := ButtonGroup.new()
 	for option in [["large", "LARGE"], ["small", "SMALL"]]:
 		var b := Button.new()
-		b.theme_type_variation = "CompactButton"
+		b.theme_type_variation = "FlatButton"
 		b.text = option[1]
 		b.toggle_mode = true
 		b.button_group = group
@@ -83,10 +85,10 @@ func _ready() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ver.add_child(spacer)
-	_check_btn.theme_type_variation = "CompactButton"
+	_check_btn.theme_type_variation = "FlatButton"
 	ver.add_child(_check_btn)
 	var releases := Button.new()
-	releases.theme_type_variation = "CompactButton"
+	releases.theme_type_variation = "FlatButton"
 	releases.text = "ALL VERSIONS"
 	releases.pressed.connect(func(): OS.shell_open(AppConfig.RELEASES_PAGE))
 	ver.add_child(releases)
@@ -127,7 +129,7 @@ func _apply_name() -> void:
 		_name_msg.text = "3-16 letters, numbers, spaces, - or _"
 		_name_msg.add_theme_color_override("font_color", ERROR_COLOR)
 		return
-	Net.local_name = n
+	Net.save_local_name(n)
 	if Backend.is_online():
 		Net.set_nickname(n)
 	_name_msg.text = "Saved"
