@@ -165,6 +165,7 @@ func _on_packet(pid: int, bytes: PackedByteArray) -> void:
 				"room_join": _handle_room_join(pid, msg)
 				"room_leave": _remove_from_room(pid)
 				"room_settings": _handle_room_settings(pid, msg)
+				"room_rename": _handle_room_rename(pid, msg)
 				"game_start": _handle_game_start(pid)
 				"game_ready": _handle_game_ready(pid)
 				"game_action": _handle_game_action(pid, msg)
@@ -367,6 +368,19 @@ func _send_room_state(room: Dictionary) -> void:
 	}
 	for m in room["members"]:
 		_send(m, {"t": "room_state", "room": public_room, "players": players})
+
+## Solo el anfitrión cambia el nombre de su party (se crea con uno aleatorio).
+func _handle_room_rename(pid: int, msg: Dictionary) -> void:
+	var room := _room_of(pid)
+	if room.is_empty() or room["host_id"] != pid:
+		return
+	var name: Variant = msg.get("name")
+	if not (name is String) or _room_re.search((name as String).strip_edges()) == null:
+		_send_error(pid, "Invalid party name")
+		return
+	room["name"] = (name as String).strip_edges()
+	_send_room_state(room)
+	_presence_dirty = true
 
 func _handle_room_settings(pid: int, msg: Dictionary) -> void:
 	var room := _room_of(pid)

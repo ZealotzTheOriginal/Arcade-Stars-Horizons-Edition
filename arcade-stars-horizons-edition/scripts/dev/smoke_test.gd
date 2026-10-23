@@ -14,6 +14,7 @@ var started := false
 var blocked := false
 var last_move := -1
 var moves := 0
+var renamed := false
 
 func _initialize() -> void:
 	role = OS.get_cmdline_user_args()[0] if OS.get_cmdline_user_args().size() > 0 else "host"
@@ -38,9 +39,15 @@ func _process(delta: float) -> bool:
 		if not is_host_role and not joined and not lobby.rooms.is_empty():
 			joined = true
 			net.join_room(lobby.rooms[0]["id"])
+	# solo: el anfitrión renombra la party antes de empezar (el servidor reenvía el estado)
+	if role == "solo" and net.in_room and net.room.get("name") == "Smoke Room" and not renamed:
+		renamed = true
+		net.rename_room("Renamed Party")
+	if role == "solo" and not started and net.room.get("name") != "Renamed Party":
+		return false
 	if is_host_role and not started and net.players.size() >= needed:
 		started = true
-		print("[%s] players: %s" % [role, net.players])
+		print("[%s] party: %s players: %s" % [role, net.room.get("name"), net.players])
 		net.start_game()
 	if role == "host_block" and blocked:
 		print("[host_block] BLOCKED as expected")

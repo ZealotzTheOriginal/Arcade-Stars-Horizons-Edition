@@ -15,6 +15,12 @@ const PLAYER_COLORS: Array[Color] = [
 	Color("#86F730"), Color("#A6C8FF"), Color("#ECB2FF"), Color("#FFD166"),
 	Color("#FF7A8A"), Color("#5EEAD4"), Color("#C4B5FD"), Color("#FDBA74"),
 ]
+## Nombres aleatorios con los que nace una party (el anfitrión la renombra desde dentro).
+const PARTY_NAMES := [
+	"Orion Nebula", "Pleiades Cluster", "Vega Horizon", "Sirius Orbit",
+	"Kuiper Belt", "Aurora Borealis", "Red Pulsar", "Andromeda",
+]
+const PARTY_NAME_PATTERN := "^[A-Za-z0-9_\\- ]{3,24}$"
 const NICKNAME_PATTERN := "^[A-Za-z0-9_\\- ]{3,16}$"
 
 var local_name := "Player%d" % (randi() % 900 + 100)
@@ -72,6 +78,13 @@ static func is_valid_nickname(value: String) -> bool:
 func set_nickname(value: String) -> void:
 	Backend.send({"t": "nickname", "nickname": value})
 
+static func is_valid_party_name(value: String) -> bool:
+	return RegEx.create_from_string(PARTY_NAME_PATTERN).search(value) != null
+
+## Crea una party con un nombre aleatorio.
+func create_party(game_id: String) -> void:
+	create_room(PARTY_NAMES.pick_random(), game_id)
+
 func create_room(room_name: String, game_id: String) -> void:
 	Backend.send({"t": "room_create", "name": room_name, "game_id": game_id})
 
@@ -85,6 +98,10 @@ func leave(reason: String = "") -> void:
 
 func set_room_setting(key: String, value: Variant) -> void:
 	Backend.send({"t": "room_settings", "key": key, "value": value})
+
+## Solo el anfitrión (el servidor lo comprueba).
+func rename_room(room_name: String) -> void:
+	Backend.send({"t": "room_rename", "name": room_name})
 
 func set_room_game(game_id: String) -> void:
 	Backend.send({"t": "room_settings", "game_id": game_id})

@@ -71,6 +71,7 @@ func refresh() -> void:
 
 func _game_card(id: String) -> GameCard:
 	var card := GameCard.new(id)
+	card.play_requested.connect(func(game_id): Net.create_party(game_id))    # el hub abre la party creada
 	card.download_requested.connect(func(game_id):
 		_message.text = ""
 		Updater.download_game(game_id)

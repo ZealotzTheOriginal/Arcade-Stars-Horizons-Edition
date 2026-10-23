@@ -1,6 +1,6 @@
 class_name SidebarToggle
 extends Control
-## Icono clásico de mostrar/ocultar barra lateral (rectángulo con una columna a la izquierda),
+## Icono clásico de mostrar/ocultar barra lateral (rectángulo con una columna a la derecha),
 ## dibujado por código. Con la barra visible la columna va rellena; oculta, solo el divisor.
 
 signal toggled(shown: bool)
@@ -24,9 +24,9 @@ func _draw() -> void:
 		draw_rect(Rect2(Vector2.ZERO, size), Palette.fade(Palette.FG_100, 0.07))
 	draw_rect(rect, col, false, 1.5)
 	if shown:
-		draw_rect(Rect2(rect.position + Vector2(1.5, 1.5), Vector2(4.5, 11)), col)
+		draw_rect(Rect2(rect.position + Vector2(12, 1.5), Vector2(4.5, 11)), col)
 	else:
-		draw_line(rect.position + Vector2(6.5, 0), rect.position + Vector2(6.5, 14), col, 1.5)
+		draw_line(rect.position + Vector2(11.5, 0), rect.position + Vector2(11.5, 14), col, 1.5)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_MOUSE_ENTER:

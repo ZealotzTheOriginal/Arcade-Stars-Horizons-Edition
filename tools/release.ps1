@@ -4,7 +4,8 @@
 #   .\tools\release.ps1 -Launcher -Games all -Publish # genera y sube todo
 #
 # Releases que crea (el manifest las enlaza):
-#   launcher-<version>        ArcadeStars-<version>-win64.zip   (versión de application/config/version)
+#   launcher-<version>        ArcadeStars-<version>-win64.zip y ArcadeStars-<version>-linux-x86_64.tar.gz
+#                             (versión de application/config/version)
 #   game-<id>-<version>       <id>.pck                          (versión de games/<id>/<id>/manifest.json)
 #   catalog                   manifest.json                     (se sobrescribe en cada publicación)
 #
@@ -30,7 +31,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 function Get-Sha256($path) { (Get-FileHash -Algorithm SHA256 $path).Hash.ToLower() }
 
 # ── Manifest previo (para no perder entradas de lo que no se reconstruye) ──
-$manifest = @{ schema = 1; launcher = $null; games = @{} }
+$manifest = @{ schema = 1; launcher = $null; launcher_linux = $null; games = @{} }
 $previous = $null
 if ($PreviousManifest -and (Test-Path $PreviousManifest)) {
     $previous = Get-Content $PreviousManifest -Raw | ConvertFrom-Json
@@ -39,6 +40,7 @@ if ($PreviousManifest -and (Test-Path $PreviousManifest)) {
 }
 if ($previous) {
     if ($previous.launcher) { $manifest.launcher = $previous.launcher }
+    if ($previous.launcher_linux) { $manifest.launcher_linux = $previous.launcher_linux }
     if ($previous.games) { $previous.games.PSObject.Properties | ForEach-Object { $manifest.games[$_.Name] = $_.Value } }
 }
 
@@ -80,6 +82,22 @@ if ($Launcher) {
     $manifest.launcher = @{ version = $version; url = "$BaseUrl/$tag/ArcadeStars-$version-win64.zip"; sha256 = (Get-Sha256 $zip); size = (Get-Item $zip).Length }
     $tags += , @($tag, $zip, "Launcher $version", $true)
     Write-Host "launcher $version"
+
+    # Linux x86_64: binario con el .pck incrustado, empaquetado en .tar.gz (conserva el permiso de ejecución)
+    $linuxDir = Join-Path $root "dist/hub-linux"
+    $bin = Join-Path $linuxDir "ArcadeStars.x86_64"
+    New-Item -ItemType Directory -Force $linuxDir | Out-Null
+    Remove-Item $bin -ErrorAction SilentlyContinue
+    & $Godot --headless --path $hub --export-release "Linux" $bin | Out-Null
+    if (-not (Test-Path $bin)) { throw "Linux launcher export failed" }
+    $tgzName = "ArcadeStars-$version-linux-x86_64.tar.gz"
+    $tgz = Join-Path $dir $tgzName
+    # Desde Windows el archivo no tiene permiso de ejecución: tarfile de Python lo fija a 755 en el .tar.gz
+    python (Join-Path $PSScriptRoot "make_tarball.py") $bin $tgz
+    if ($LASTEXITCODE -ne 0) { throw "tarball failed" }
+    $manifest.launcher_linux = @{ version = $version; url = "$BaseUrl/$tag/$tgzName"; sha256 = (Get-Sha256 $tgz); size = (Get-Item $tgz).Length }
+    $tags += , @($tag, $tgz, "Launcher $version", $true)
+    Write-Host "launcher-linux $version"
 }
 
 # ── Manifest ──

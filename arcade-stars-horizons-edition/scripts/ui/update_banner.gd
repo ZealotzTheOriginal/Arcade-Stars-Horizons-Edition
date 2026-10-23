@@ -24,11 +24,12 @@ func _ready() -> void:
 	_bar.max_value = 100.0
 	_bar.visible = false
 	h.add_child(_bar)
-	_button = Button.new()
-	_button.theme_type_variation = "PrimaryButton"
-	_button.text = "UPDATE"
+	_button = AccentButton.new("UPDATE")
 	_button.pressed.connect(func():
-		Updater.update_launcher()
+		if Updater.can_self_update():
+			Updater.update_launcher()
+		else:
+			OS.shell_open(AppConfig.RELEASES_PAGE)    # Linux: sin autoactualizado, descarga manual
 		refresh())
 	h.add_child(_button)
 
@@ -55,4 +56,5 @@ func refresh() -> void:
 	else:
 		_label.text = "Downloading update…"
 	_bar.visible = busy
-	_button.visible = not entry.is_empty() and Updater.can_self_update() and not busy
+	_button.text = "UPDATE" if Updater.can_self_update() else "DOWNLOAD"
+	_button.visible = not entry.is_empty() and not busy

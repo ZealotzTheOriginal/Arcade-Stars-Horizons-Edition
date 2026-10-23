@@ -37,8 +37,12 @@ func is_busy(key: String) -> bool:
 func can_self_update() -> bool:
 	return OS.get_name() == "Windows" and not OS.has_feature("editor")
 
+## Entrada del manifest con el launcher de esta plataforma ("launcher" = Windows, "launcher_linux").
+static func launcher_key() -> String:
+	return "launcher_linux" if OS.get_name() == "Linux" else "launcher"
+
 func launcher_update() -> Dictionary:
-	var entry: Dictionary = manifest.get("launcher", {})
+	var entry: Dictionary = manifest.get(launcher_key(), {})
 	if entry.is_empty() or Semver.compare(entry["version"], current_version()) <= 0:
 		return {}
 	return entry
@@ -74,9 +78,10 @@ func check() -> void:
 func _validate_manifest(m: Variant) -> Dictionary:
 	if not (m is Dictionary) or int(m.get("schema", 0)) != 1:
 		return {}
-	var out := {"launcher": {}, "games": {}}
-	if m.get("launcher") is Dictionary and _valid_entry(m["launcher"]):
-		out["launcher"] = m["launcher"]
+	var out := {"launcher": {}, "launcher_linux": {}, "games": {}}
+	for key in ["launcher", "launcher_linux"]:
+		if m.get(key) is Dictionary and _valid_entry(m[key]):
+			out[key] = m[key]
 	if m.get("games") is Dictionary:
 		for id in m["games"]:
 			if id is String and GameRegistry.is_valid_id(id) and m["games"][id] is Dictionary and _valid_entry(m["games"][id]):

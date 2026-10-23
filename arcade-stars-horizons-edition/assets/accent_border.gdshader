@@ -47,7 +47,9 @@ void fragment() {
 	// Coordenadas en píxeles físicos (centros de píxel en k + 0.5) y rectángulo redondeado a la rejilla.
 	vec2 q = p * px_scale + origin_frac;
 	vec2 a = round(origin_frac);
-	vec2 b = round(origin_frac + size_px * px_scale);
+	// Borde final: en un empate (.5) se redondea hacia abajo; el píxel cuyo centro cae justo en el borde
+	// no lo rasteriza el quad del botón, así que el anillo quedaría fuera.
+	vec2 b = floor(origin_frac + size_px * px_scale + 0.499);
 	float d = sd_round_box(q - (a + b) * 0.5, (b - a) * 0.5, radius_px * px_scale);
 	// Cobertura del píxel sobre la franja [-border_px, 0] pegada al contorno (y sobre el interior).
 	float lo = max(d - 0.5, -border_px);

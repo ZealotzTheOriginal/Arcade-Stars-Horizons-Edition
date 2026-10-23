@@ -42,8 +42,12 @@ static func server_url() -> String:
 ## Sin animación de inicio: al reiniciar el launcher (`-- --no-splash`) o con ASH_NO_SPLASH=1.
 const NO_SPLASH_ARG := "--no-splash"
 
+## También se omite si el sistema no compone ventanas transparentes (p. ej. Linux/XFCE con el
+## compositor desactivado): el splash flota sobre el escritorio y se vería un rectángulo negro.
 static func skip_splash() -> bool:
-	return OS.get_environment("ASH_NO_SPLASH") == "1" or OS.get_cmdline_user_args().has(NO_SPLASH_ARG)
+	if OS.get_environment("ASH_NO_SPLASH") == "1" or OS.get_cmdline_user_args().has(NO_SPLASH_ARG):
+		return true
+	return not DisplayServer.is_window_transparency_available()
 
 ## Perfil de sesión: permite varias instancias con usuarios distintos en un mismo PC.
 ## Se elige con `-- --profile=2` o con la variable ASH_PROFILE.

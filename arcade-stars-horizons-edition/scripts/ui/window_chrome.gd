@@ -60,7 +60,9 @@ func set_mode(m: Mode) -> void:
 
 func _process(_delta: float) -> void:
 	_frame_mat.set_shader_parameter("window_px", Vector2(get_window().size))
-	_frame_mat.set_shader_parameter("radius_px", CORNER_RADIUS * get_window().content_scale_factor)
+	# Sin transparencia disponible (Linux sin compositor) las esquinas recortadas se verían negras
+	var radius := CORNER_RADIUS if DisplayServer.is_window_transparency_available() else 0.0
+	_frame_mat.set_shader_parameter("radius_px", radius * get_window().content_scale_factor)
 
 # ── Tamaño fijo ──────────────────────────────────────────
 
@@ -308,6 +310,7 @@ func _cancel_exit() -> void:
 	_confirm.visible = false
 
 func _input(event: InputEvent) -> void:
+	_release_field_focus(event)
 	if _confirm == null or not _confirm.visible or not (event is InputEventKey and event.pressed):
 		return
 	if event.keycode == KEY_ESCAPE:
@@ -315,6 +318,15 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
 		_confirm_exit()
+
+## Un clic fuera del campo de texto con el foco lo deselecciona (en todo el launcher y en los juegos).
+func _release_field_focus(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton and event.pressed):
+		return
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused is LineEdit or focused is TextEdit:
+		if not focused.get_global_rect().has_point(focused.get_global_mouse_position()):
+			focused.release_focus()
 
 func _build_confirm() -> void:
 	_confirm = ColorRect.new()

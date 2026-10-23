@@ -1,11 +1,6 @@
 extends Control
 ## Hub principal: presencia online, lista de parties (salas) y party actual.
 
-const ROOM_NAMES := [
-	"Orion Nebula", "Pleiades Cluster", "Vega Horizon", "Sirius Orbit",
-	"Kuiper Belt", "Aurora Borealis", "Red Pulsar", "Andromeda",
-]
-const ROOM_NAME_PATTERN := "^[A-Za-z0-9_\\- ]{3,24}$"
 const ERROR_COLOR := Color("#FF7A8A")
 
 var _users_box: VBoxContainer
@@ -20,7 +15,8 @@ var _settings_box: VBoxContainer
 var _start_btn: Button
 var _create_btn: Button
 var _status: Label
-var _room_name_input: LineEdit
+var _rename_btn: Button
+var _rename_input: LineEdit
 var _library_view: Control
 var _settings_view: Control
 var _tab_buttons: Dictionary = {}    # nombre de pestaña -> Button
@@ -88,13 +84,12 @@ func _build() -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 20)
 	root.add_child(body)
-	_users_panel = _build_users_panel()
-	_users_panel.visible = _load_sidebar_shown()
-	body.add_child(_users_panel)
-
 	var center := Control.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.add_child(center)
+	_users_panel = _build_users_panel()    # barra lateral a la derecha
+	_users_panel.visible = _load_sidebar_shown()
+	body.add_child(_users_panel)
 	_lobby_view = _build_lobby_view()
 	_room_view = _build_room_view()
 	_library_view = LibraryView.new()
@@ -106,9 +101,6 @@ func _build() -> void:
 func _build_nav() -> Control:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 14)
-	_sidebar_toggle = SidebarToggle.new(_load_sidebar_shown())
-	_sidebar_toggle.toggled.connect(_on_sidebar_toggled)
-	h.add_child(_sidebar_toggle)
 	var group := ButtonGroup.new()
 	for tab in [["party", "Party"], ["library", "Library"], ["settings", "Settings"]]:
 		var b := NavLink.new(tab[1])
@@ -126,6 +118,9 @@ func _build_nav() -> Control:
 	_status = CapsLabel.new()
 	_status.theme_type_variation = "MutedLabel"
 	h.add_child(_status)
+	_sidebar_toggle = SidebarToggle.new(_load_sidebar_shown())    # al final: la barra lateral está a la derecha
+	_sidebar_toggle.toggled.connect(_on_sidebar_toggled)
+	h.add_child(_sidebar_toggle)
 	return h
 
 func _build_users_panel() -> Control:
@@ -164,13 +159,6 @@ func _build_lobby_view() -> Control:
 	t.text = "Party"
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(t)
-	_room_name_input = LineEdit.new()
-	_room_name_input.text = ROOM_NAMES.pick_random()
-	_room_name_input.max_length = 24
-	_room_name_input.placeholder_text = "PARTY NAME"
-	_room_name_input.custom_minimum_size.x = 150
-	_room_name_input.text_submitted.connect(func(_t): _on_create_pressed())
-	top.add_child(_room_name_input)
 	_create_btn = AccentButton.new("CREATE PARTY")
 	_create_btn.pressed.connect(_on_create_pressed)
 	top.add_child(_create_btn)
@@ -200,11 +188,31 @@ func _build_room_view() -> Control:
 	p.add_child(v)
 
 	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 10)
 	v.add_child(top)
 	_room_title = CapsLabel.new()
 	_room_title.theme_type_variation = "HeadLabel"
+	_room_title.clip_text = true
 	_room_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_room_title)
+	# Renombrar (solo anfitrión): el título pasa a ser un campo; Enter aplica, Esc o clic fuera cancela.
+	_rename_input = LineEdit.new()
+	_rename_input.max_length = 24
+	_rename_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rename_input.visible = false
+	_rename_input.text_submitted.connect(func(_t): _apply_rename())
+	_rename_input.focus_exited.connect(_end_rename)
+	_rename_input.gui_input.connect(func(e):
+		if e is InputEventKey and e.pressed and e.keycode == KEY_ESCAPE:
+			_end_rename()
+			_rename_input.accept_event())
+	top.add_child(_rename_input)
+	_rename_btn = Button.new()
+	_rename_btn.theme_type_variation = "CompactButton"
+	_rename_btn.text = "RENAME"
+	_rename_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_rename_btn.pressed.connect(_begin_rename)
+	top.add_child(_rename_btn)
 	var leave := Button.new()
 	leave.text = "LEAVE PARTY"
 	leave.pressed.connect(func(): Net.leave())
@@ -232,9 +240,7 @@ func _build_room_view() -> Control:
 	_room_players.add_theme_constant_override("separation", 8)
 	v.add_child(_room_players)
 
-	_start_btn = Button.new()
-	_start_btn.theme_type_variation = "PrimaryButton"
-	_start_btn.text = "START GAME"
+	_start_btn = AccentButton.new("START GAME")
 	_start_btn.pressed.connect(func(): Net.start_game())
 	v.add_child(_start_btn)
 	return p
@@ -333,6 +339,7 @@ func _refresh_room() -> void:
 	if not Net.in_room:
 		return
 	_room_title.text = Net.room.get("name", "Party")
+	_rename_btn.visible = Net.is_host() and not _rename_input.visible
 	var idx := 0
 	for i in _game_select.item_count:
 		if _game_select.get_item_metadata(i) == Net.room.get("game_id"):
@@ -428,18 +435,38 @@ func _default_game_id() -> String:
 	return GameRegistry.games.keys()[0]
 
 func _on_create_pressed() -> void:
-	var rname := _room_name_input.text.strip_edges()
-	if RegEx.create_from_string(ROOM_NAME_PATTERN).search(rname) == null:
-		_set_status("Party name: 3-24 letters, numbers, spaces, - or _", true)
-		return
 	if GameRegistry.games.is_empty():
 		return
 	_set_status("")
-	Net.create_room(rname, _default_game_id())
+	Net.create_party(_default_game_id())
+
+func _begin_rename() -> void:
+	_rename_input.text = _room_title.text
+	_room_title.visible = false
+	_rename_btn.visible = false
+	_rename_input.visible = true
+	_rename_input.grab_focus()
+	_rename_input.select_all()
+
+func _apply_rename() -> void:
+	var rname := _rename_input.text.strip_edges()
+	if not Net.is_valid_party_name(rname):
+		_set_status("Party name: 3-24 letters, numbers, spaces, - or _", true)
+		return
+	_set_status("")
+	if rname != Net.room.get("name", ""):
+		Net.rename_room(rname)
+	_end_rename()
+
+func _end_rename() -> void:
+	if not _rename_input.visible:
+		return
+	_rename_input.visible = false
+	_room_title.visible = true
+	_rename_btn.visible = Net.is_host()
 
 func _on_left_room(reason: String) -> void:
 	_set_status(reason, reason != "")
-	_room_name_input.text = ROOM_NAMES.pick_random()
 	_show_view()
 
 func _set_status(text: String, error: bool = false) -> void:

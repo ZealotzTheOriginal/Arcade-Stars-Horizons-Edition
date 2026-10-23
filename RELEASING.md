@@ -43,6 +43,19 @@ conservarlas todas es lo normal. Si algún día molestan, se borra una con `gh r
 Basta con `ArcadeStars.exe` (de `dist/hub/`, o el zip de la última release `launcher-x.y.z`), en una carpeta con permiso
 de escritura. Los juegos se descargan desde la pestaña Library y el launcher se actualiza solo.
 
+## Linux (x86_64)
+`-Launcher` genera también `ArcadeStars-<versión>-linux-x86_64.tar.gz` en la misma release (necesita `python` en el PATH
+para empaquetarlo con permiso de ejecución). Para instalar en Linux:
+
+```
+tar -xzf ArcadeStars-1.3.0-linux-x86_64.tar.gz -C ~/ArcadeStars
+~/ArcadeStars/ArcadeStars.x86_64
+```
+
+En Linux el launcher **no se actualiza solo**: avisa de la versión nueva y el botón DOWNLOAD abre la página de Releases.
+El splash y las esquinas redondeadas necesitan un compositor de ventanas (en XFCE: *Ajustes → Ajustes del gestor de
+ventanas (avanzado) → Compositor*, activado por defecto); sin él, el launcher arranca sin splash y con esquinas rectas.
+
 ## Problemas típicos
 - `Remove-Item ... IOException` al generar: algún programa tiene abierta `dist/release`; el script ya lo tolera.
 - `gh` sin permisos: `gh auth status` y `gh auth login` con la cuenta propietaria.

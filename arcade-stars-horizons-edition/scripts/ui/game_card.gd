@@ -2,23 +2,29 @@ class_name GameCard
 extends Panel
 ## Tarjeta cuadrada de un juego en la biblioteca: portada de fondo (o un marcador si el juego no tiene
 ## o no se puede cargar), título arriba a la izquierda con su estado debajo, versión abajo a la
-## izquierda y acciones abajo a la derecha.
+## izquierda y, abajo a la derecha, un menú ⋯ con todas las acciones (jugar, descargar o actualizar,
+## desinstalar).
 ## Portada: `res://<id>/cover.png` dentro del .pck del juego (solo disponible si está instalado).
 
+signal play_requested(game_id: String)
 signal download_requested(game_id: String)
 signal uninstall_confirmed(game_id: String)
 
+const SPIRAL_SHADER := preload("res://assets/spiral_stars.gdshader")
 const SIZE := Vector2(210, 210)
-const RADIUS := 6
+const RADIUS := 4
 const PAD := 12
+const LOGO_FRACTION := 0.3    # tamaño del logo del marcador respecto a la tarjeta
 const CONFIRM_SECONDS := 3.0
-const ERROR_COLOR := Color("#FF7A8A")
 
-static var _logo_cache: Dictionary = {}    # px -> textura del logo para el marcador
-static var _halo_cache: Dictionary = {}    # color -> halo radial del marcador
+enum Action { PLAY, DOWNLOAD, UNINSTALL }
 
 var game_id: String
 var progress_bar: ProgressBar    # solo mientras se descarga
+var menu_button: Button
+var _menu: PopupMenu
+var _placeholder_mat: ShaderMaterial
+var _confirming := false
 
 func _init(id: String) -> void:
 	game_id = id
@@ -36,16 +42,16 @@ func _ready() -> void:
 		img.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(img)
+		# Sombreados arriba y abajo para que el texto se lea sobre cualquier imagen
+		add_child(_scrim(true))
+		add_child(_scrim(false))
 	else:
-		var placeholder := Control.new()
-		placeholder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		placeholder.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		placeholder.draw.connect(_draw_placeholder.bind(placeholder))
-		add_child(placeholder)
-	# Sombreados arriba y abajo para que el texto se lea sobre cualquier imagen
-	add_child(_scrim(true))
-	add_child(_scrim(false))
+		_build_placeholder()
 	_build_overlay()
+
+func _process(_delta: float) -> void:
+	if _placeholder_mat:
+		_placeholder_mat.set_shader_parameter("fade", StarField.tree_alpha(self))
 
 ## Portada del juego, o null si no tiene o no se puede cargar.
 static func cover_texture(id: String) -> Texture2D:
@@ -55,6 +61,28 @@ static func cover_texture(id: String) -> Texture2D:
 	if not ResourceLoader.exists(path):
 		return null
 	return load(path) as Texture2D
+
+## Marcador sin portada: fondo liso con estrellas en espiral (shader) y el logo en el centro.
+func _build_placeholder() -> void:
+	var bg := ColorRect.new()
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_placeholder_mat = ShaderMaterial.new()
+	_placeholder_mat.shader = SPIRAL_SHADER
+	_placeholder_mat.set_shader_parameter("size_px", SIZE)
+	_placeholder_mat.set_shader_parameter("bg_color", Palette.BG_300)
+	bg.material = _placeholder_mat
+	add_child(bg)
+	var logo_size := SIZE.x * LOGO_FRACTION
+	var logo := TextureRect.new()
+	logo.texture = AppTheme.crisp_logo(roundi(logo_size * get_window().content_scale_factor))
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	logo.modulate = Palette.fade(Palette.FG_100, 0.85)
+	logo.position = SIZE * Vector2(0.5, 0.45) - Vector2(logo_size, logo_size) / 2.0
+	logo.size = Vector2(logo_size, logo_size)
+	add_child(logo)
 
 func _scrim(top: bool) -> TextureRect:
 	var g := Gradient.new()
@@ -82,11 +110,13 @@ func _build_overlay() -> void:
 	var state := Updater.game_state(game_id)
 	var m := MarginContainer.new()
 	m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for side in ["left", "right", "top", "bottom"]:
 		m.add_theme_constant_override("margin_" + side, PAD)
 	add_child(m)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 2)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	m.add_child(v)
 
 	var title := CapsLabel.new()
@@ -105,6 +135,7 @@ func _build_overlay() -> void:
 
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(spacer)
 	var bottom := HBoxContainer.new()
 	bottom.add_theme_constant_override("separation", 6)
@@ -121,18 +152,10 @@ func _build_overlay() -> void:
 		progress_bar.max_value = 100.0
 		bottom.add_child(progress_bar)
 		return
-	if state == "pending":
+	if state == "missing" and Updater.game_download(game_id).is_empty():
+		modulate.a = 0.5    # sin descarga disponible: tarjeta atenuada, sin acciones
 		return
-	if state != "installed" and not Updater.game_download(game_id).is_empty():
-		var b := Button.new()
-		b.theme_type_variation = "CompactButton"
-		b.text = "UPDATE" if state == "update" else "DOWNLOAD"
-		b.pressed.connect(func(): download_requested.emit(game_id))
-		bottom.add_child(b)
-	elif state == "missing":
-		modulate.a = 0.5    # sin descarga disponible: tarjeta atenuada, sin botón
-	if GameLoader.is_installed(game_id):
-		bottom.add_child(_uninstall_button(state == "update"))
+	bottom.add_child(_menu_button())
 
 func _label(text: String, color: Color) -> Label:
 	var l := CapsLabel.new()
@@ -142,73 +165,61 @@ func _label(text: String, color: Color) -> Label:
 	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return l
 
-## Desinstalar pide una segunda pulsación (CONFIRM unos segundos). Junto a UPDATE se muestra como
-## icono para que quepa. No se puede con el juego elegido en tu party (podría estar en uso).
-func _uninstall_button(compact: bool) -> Button:
+# ── Menú de acciones (⋯) ─────────────────────────────────
+
+func _menu_button() -> Button:
 	var b := Button.new()
 	b.theme_type_variation = "CompactButton"
-	b.disabled = Net.in_room and Net.room.get("game_id", "") == game_id
-	var idle_text := "" if compact else "UNINSTALL"
-	b.text = idle_text
-	if compact:
-		b.custom_minimum_size = Vector2(32, 0)
-		b.tooltip_text = "UNINSTALL"
-		b.draw.connect(func():
-			if b.text == "":
-				_draw_trash(b))
+	b.custom_minimum_size = Vector2(34, 30)
+	b.tooltip_text = "MORE"
+	menu_button = b
+	b.draw.connect(func():
+		var c: Vector2 = b.size / 2.0
+		for i in 3:
+			b.draw_circle(c + Vector2((i - 1) * 6, 0), 1.6, Palette.FG_100, true, -1.0, true))
+	_menu = PopupMenu.new()
+	_menu.hide_on_item_selection = false    # UNINSTALL pide confirmación sin cerrar el menú
+	_menu.id_pressed.connect(_on_menu_action)
+	_menu.popup_hide.connect(func(): _confirming = false)
+	b.add_child(_menu)
 	b.pressed.connect(func():
-		if b.text != "CONFIRM":
-			b.text = "CONFIRM"
-			b.add_theme_color_override("font_color", ERROR_COLOR)
-			b.add_theme_color_override("font_hover_color", ERROR_COLOR)
-			get_tree().create_timer(CONFIRM_SECONDS).timeout.connect(func():
-				if is_instance_valid(b):
-					b.text = idle_text
-					b.remove_theme_color_override("font_color")
-					b.remove_theme_color_override("font_hover_color"))
-			return
-		uninstall_confirmed.emit(game_id))
+		_fill_menu()
+		# Se abre hacia arriba y alineado a la derecha del botón (coordenadas de pantalla, como OptionButton)
+		var rect := Rect2(b.get_screen_position(), b.size * get_window().content_scale_factor)
+		_menu.reset_size()
+		var menu_size := Vector2(_menu.get_contents_minimum_size())
+		_menu.popup(Rect2i(Vector2i((rect.position + Vector2(rect.size.x - menu_size.x, -menu_size.y - 4)).round()), Vector2i.ZERO)))
 	return b
 
-## Icono de papelera dibujado por código.
-func _draw_trash(b: Button) -> void:
-	var col := Palette.fade(Palette.FG_100, 0.35 if b.disabled else 0.9)
-	var c := b.size / 2.0
-	b.draw_line(c + Vector2(-6, -5), c + Vector2(6, -5), col, 1.5, true)
-	b.draw_line(c + Vector2(-2, -7), c + Vector2(2, -7), col, 1.5, true)
-	b.draw_polyline(PackedVector2Array([c + Vector2(-4.5, -3), c + Vector2(-3.5, 7), c + Vector2(3.5, 7), c + Vector2(4.5, -3)]), col, 1.5, true)
+func _fill_menu() -> void:
+	_menu.clear()
+	var state := Updater.game_state(game_id)
+	if state == "installed":
+		_menu.add_item("PLAY", Action.PLAY)
+		_menu.set_item_disabled(_menu.item_count - 1, not Backend.is_online() or Net.in_room)
+	if state != "installed" and state != "pending" and not Updater.game_download(game_id).is_empty():
+		_menu.add_item("UPDATE" if state == "update" else "DOWNLOAD", Action.DOWNLOAD)
+	if GameLoader.is_installed(game_id):
+		_menu.add_item("CONFIRM UNINSTALL" if _confirming else "UNINSTALL", Action.UNINSTALL)
+		# No se puede con el juego elegido en tu party (podría estar en uso)
+		_menu.set_item_disabled(_menu.item_count - 1, Net.in_room and Net.room.get("game_id", "") == game_id)
 
-## Halo radial suave (degradado continuo, sin escalones).
-static func _halo(accent: Color) -> GradientTexture2D:
-	if not _halo_cache.has(accent):
-		var g := Gradient.new()
-		g.set_color(0, Palette.fade(accent, 0.16))
-		g.set_color(1, Palette.fade(accent, 0.0))
-		g.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CUBIC
-		var tex := GradientTexture2D.new()
-		tex.gradient = g
-		tex.fill = GradientTexture2D.FILL_RADIAL
-		tex.fill_from = Vector2(0.5, 0.5)
-		tex.fill_to = Vector2(1.0, 0.5)
-		tex.width = 256
-		tex.height = 256
-		_halo_cache[accent] = tex
-	return _halo_cache[accent]
-
-## Marcador sin portada: degradado oscuro, un halo de acento (según el juego) y el logo en marca de agua.
-func _draw_placeholder(c: Control) -> void:
-	var s := c.size
-	var accents := [Palette.ACC_PINK, Palette.ACC_GREEN, Palette.ACC_BLUE]
-	var accent: Color = accents[absi(game_id.hash()) % accents.size()]
-	var steps := 24
-	for i in steps:
-		var k := float(i) / steps
-		c.draw_rect(Rect2(0, s.y * k, s.x, s.y / steps + 1), Palette.BG_300.lerp(Palette.VOID, k))
-	var center := s * Vector2(0.5, 0.45)
-	var halo := s.x * 1.1
-	c.draw_texture_rect(_halo(accent), Rect2(center - Vector2(halo, halo) / 2.0, Vector2(halo, halo)), false)
-	var px := roundi(s.x * 0.32 * get_window().content_scale_factor)
-	if not _logo_cache.has(px):
-		_logo_cache[px] = AppTheme.crisp_logo(px)
-	var logo_size := Vector2(s.x * 0.32, s.x * 0.32)
-	c.draw_texture_rect(_logo_cache[px], Rect2(center - logo_size / 2.0, logo_size), false, Palette.fade(Palette.FG_100, 0.10))
+func _on_menu_action(id: int) -> void:
+	match id:
+		Action.PLAY:
+			_menu.hide()
+			play_requested.emit(game_id)
+		Action.DOWNLOAD:
+			_menu.hide()
+			download_requested.emit(game_id)
+		Action.UNINSTALL:
+			if not _confirming:
+				_confirming = true
+				_fill_menu()
+				get_tree().create_timer(CONFIRM_SECONDS).timeout.connect(func():
+					if is_instance_valid(self) and _confirming:
+						_confirming = false
+						_fill_menu())
+				return
+			_menu.hide()
+			uninstall_confirmed.emit(game_id)

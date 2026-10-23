@@ -53,6 +53,8 @@ func _process(_d: float) -> bool:
 	if frame == 52:
 		_shot("hub_lobby")
 		_tab("library")
+	if frame == 56:
+		current_scene._library_view._cards["minesweeper"].menu_button.pressed.emit()
 	if frame == 60:
 		_shot("hub_library")
 		current_scene._sidebar_toggle.shown = false
@@ -61,8 +63,8 @@ func _process(_d: float) -> bool:
 	if frame == 70:
 		_shot("hub_settings")
 		# Dentro de una party (simulada): vista de la party y navegación libre a Library
-		net.room = {"id": "AB3X9", "name": "Orion Nebula", "game_id": "minesweeper", "settings": {}, "host_id": 1, "in_game": false}
-		net.players = {1: {"name": net.local_name, "color": 0, "ready": true}, 7: {"name": "Vega", "color": 1, "ready": false}}
+		net.room = {"id": "AB3X9", "name": "Orion Nebula", "game_id": "minesweeper", "settings": {}, "host_id": net.my_id(), "in_game": false}
+		net.players = {net.my_id(): {"name": net.local_name, "color": 0, "ready": true}, 7: {"name": "Vega", "color": 1, "ready": false}}
 		net.in_room = true
 		net.connected_to_room.emit()
 	if frame == 78:

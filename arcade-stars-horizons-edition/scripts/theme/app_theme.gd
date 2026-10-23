@@ -135,9 +135,11 @@ static func get_theme() -> Theme:
 	# Inputs (Inter: texto escrito por el usuario, en su caja original)
 	t.set_font("font", "LineEdit", font(FONT_BODY, WEIGHT_REGULAR))
 	t.set_font_size("font_size", "LineEdit", 15)
-	var field := box(Palette.fade(Palette.VOID, 0.55), Palette.fade(Palette.FG_100, 0.12), 10, 1, 12)
+	# Como los botones: sin borde y casi rectos; solo el campo con el foco lleva borde de acento
+	# ("focus" se dibuja ENCIMA de "normal", por eso su fondo es transparente).
+	var field := box(Palette.fade(Palette.VOID, 0.55), Color.TRANSPARENT, BUTTON_RADIUS, 0, 12)
 	t.set_stylebox("normal", "LineEdit", field)
-	t.set_stylebox("focus", "LineEdit", box(Palette.fade(Palette.VOID, 0.55), Palette.ACC_BLUE, 10, 1, 12))
+	t.set_stylebox("focus", "LineEdit", box(Color.TRANSPARENT, Palette.ACC_BLUE, BUTTON_RADIUS, 1, 12))
 	t.set_stylebox("read_only", "LineEdit", field)
 	t.set_color("font_color", "LineEdit", Palette.FG_100)
 	t.set_color("caret_color", "LineEdit", Palette.ACC_GREEN)
@@ -149,8 +151,12 @@ static func get_theme() -> Theme:
 	t.set_stylebox("pressed", "OptionButton", t.get_stylebox("pressed", "Button"))
 	t.set_stylebox("disabled", "OptionButton", t.get_stylebox("disabled", "Button"))
 	t.set_font("font", "PopupMenu", font(FONT_BODY, WEIGHT_REGULAR, 1))
-	t.set_stylebox("panel", "PopupMenu", box(Palette.BG_200, Palette.fade(Palette.FG_100, 0.12), 10, 1, 6))
-	t.set_stylebox("hover", "PopupMenu", box(Palette.BG_400, Color.TRANSPARENT, 8, 0, 6))
+	t.set_stylebox("panel", "PopupMenu", box(Palette.BG_200, Color.TRANSPARENT, BUTTON_RADIUS, 0, 6))
+	t.set_stylebox("hover", "PopupMenu", box(Palette.BG_400, Color.TRANSPARENT, BUTTON_RADIUS, 0, 6))
+	t.set_color("font_color", "PopupMenu", Palette.FG_200)
+	t.set_color("font_hover_color", "PopupMenu", Palette.FG_100)
+	t.set_color("font_disabled_color", "PopupMenu", Palette.fade(Palette.FG_200, 0.35))
+	t.set_constant("v_separation", "PopupMenu", 10)
 
 	# Listas y scroll
 	t.set_stylebox("panel", "ItemList", StyleBoxEmpty.new())
