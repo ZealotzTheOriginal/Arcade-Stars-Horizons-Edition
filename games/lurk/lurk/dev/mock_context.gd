@@ -1,7 +1,7 @@
 extends Node
 ## Contexto falso para probar Lurk en su editor (F5) sin hub ni servidor: ejecuta la lógica
 ## autoritativa en local a paso fijo, con latencia simulada en ambos sentidos para ejercitar la
-## predicción, y añade una nave de prueba que deambula (aún no hay IA).
+## predicción, y añade una nave de prueba que deambula y te dispara si estás cerca (aún no hay IA).
 ## Implementa la misma interfaz que `GameContext` del hub (API 2).
 
 signal view_received(view: Dictionary)
@@ -83,9 +83,15 @@ func _process(delta: float) -> void:
 			_outbox.append({"at": _time + LATENCY, "kind": "state", "data": _logic.state_for(ME)})
 	_outbox.sort_custom(func(a, b): return a["at"] < b["at"])
 
-## La nave de prueba cambia de rumbo de vez en cuando.
+## La nave de prueba cambia de rumbo de vez en cuando, dispara si te tiene cerca y reaparece sola.
 func _drive_dummy() -> void:
 	if randf() < 0.02:
 		_dummy_dir = Vector2(randi_range(-1, 1), randi_range(-1, 1))
 	_dummy_seq += 1
-	_logic.handle_input(DUMMY, {"s": _dummy_seq, "m": _dummy_dir, "a": _dummy_dir.angle() if _dummy_dir != Vector2.ZERO else 0.0})
+	var me: Vector2 = _logic.players[ME]["ship"]["pos"]
+	var pos: Vector2 = _logic.players[DUMMY]["ship"]["pos"]
+	var to_me := me - pos
+	var aim := to_me.angle() if to_me.length() < 700.0 else (_dummy_dir.angle() if _dummy_dir != Vector2.ZERO else 0.0)
+	var fire := to_me.length() < 700.0 and randf() < 0.025
+	var respawn: bool = not _logic.players[DUMMY]["alive"] and randf() < 0.01
+	_logic.handle_input(DUMMY, {"s": _dummy_seq, "m": _dummy_dir, "a": aim, "f": fire, "r": respawn})

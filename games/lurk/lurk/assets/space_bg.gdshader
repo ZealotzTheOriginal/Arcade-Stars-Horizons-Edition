@@ -7,8 +7,12 @@ uniform vec2 screen_size = vec2(1280.0, 720.0);
 uniform vec2 cam_pos = vec2(0.0);    // posición de la cámara en el mundo
 uniform float zoom = 1.0;
 
+// Hash sin seno ("hash without sine", D. Hoskins): fract(sin(x)) pierde precisión en algunas GPU y
+// deja bloques con cortes rectos en el ruido.
 float hash(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
 }
 
 float noise(vec2 p) {
@@ -26,7 +30,7 @@ float stars(vec2 p, float cell, float density, float size) {
 	if (h > density) {
 		return 0.0;
 	}
-	vec2 c = vec2(hash(id + 3.1), hash(id + 7.7));
+	vec2 c = 0.1 + 0.8 * vec2(hash(id + 3.1), hash(id + 7.7));    // lejos del borde de la celda: sin estrellas cortadas
 	float d = length((f - c) * cell);
 	float tw = 0.6 + 0.4 * sin(TIME * (0.5 + h * 3.0) + h * 50.0);
 	return (1.0 - smoothstep(0.0, size, d)) * tw;

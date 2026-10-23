@@ -87,6 +87,32 @@ static func collide_asteroids(a: Dictionary, b: Dictionary) -> void:
 	a["vel"] = (a["vel"] as Vector2) - n * j / ma
 	b["vel"] = (b["vel"] as Vector2) + n * j / mb
 
+## Primer punto del tramo a→b que toca el círculo (centro, radio), como fracción 0..1; -1 si no lo toca.
+## Las balas van muy rápido: se comprueba el tramo recorrido en el paso, no solo la posición final.
+static func segment_hits_circle(a: Vector2, b: Vector2, center: Vector2, radius: float) -> float:
+	var d := b - a
+	var f := a - center
+	var qa := d.dot(d)
+	if qa == 0.0:
+		return 0.0 if f.length() <= radius else -1.0
+	var qb := 2.0 * f.dot(d)
+	var qc := f.dot(f) - radius * radius
+	if qc <= 0.0:
+		return 0.0    # ya empieza dentro
+	var disc := qb * qb - 4.0 * qa * qc
+	if disc < 0.0:
+		return -1.0
+	var t := (-qb - sqrt(disc)) / (2.0 * qa)
+	return t if t >= 0.0 and t <= 1.0 else -1.0
+
+## Distancia de un punto a un tramo.
+static func point_segment_distance(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var len2 := ab.dot(ab)
+	if len2 == 0.0:
+		return p.distance_to(a)
+	return p.distance_to(a + ab * clampf((p - a).dot(ab) / len2, 0.0, 1.0))
+
 ## Rebote de un asteroide en los límites del mapa.
 static func bounce_asteroid_border(a: Dictionary, size: float) -> void:
 	var pos: Vector2 = a["pos"]

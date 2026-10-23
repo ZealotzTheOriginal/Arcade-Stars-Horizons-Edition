@@ -5,7 +5,7 @@ extends RefCounted
 const VOID := Color("#03030E")
 const ROCK_FILL := Color("#07081A")
 const ROCK_LINE := Color("#8FA8D8")
-const BORDER := Color("#ECB2FF")
+const BORDER := Color("#FFFFFF")
 const GEM := Color("#5EEAD4")
 const WHITE := Color(1, 1, 1)
 

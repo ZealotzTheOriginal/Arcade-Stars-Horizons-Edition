@@ -7,7 +7,7 @@ shader_type canvas_item;
 // El borde de cada luz es suave y "respira" un poco con ruido para que no parezca un círculo perfecto.
 
 const int MAX_LIGHTS = 24;
-const int MAX_SEGS = 48;
+const int MAX_SEGS = 64;
 
 uniform vec2 screen_size = vec2(1280.0, 720.0);
 uniform vec4 lights[MAX_LIGHTS];
@@ -17,8 +17,12 @@ uniform vec4 seg_b[MAX_SEGS];
 uniform int seg_count = 0;
 uniform float edge = 0.45;    // fracción del radio que ocupa el degradado del borde
 
+// Hash sin seno ("hash without sine", D. Hoskins): fract(sin(x)) pierde precisión en algunas GPU y
+// deja bloques con cortes rectos en el ruido.
 float hash(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
 }
 
 float noise(vec2 p) {

@@ -1,12 +1,14 @@
 extends Node2D
 ## Nave en vector neon: casco con alas en flecha, cabina, líneas de panel y toberas, más la llama del
-## motor (shader) orientada hacia donde empuja (WASD mueve en ejes del mundo, así que la llama no
-## siempre sale por detrás del casco, que mira al punto de mira).
+## motor (shader) en sentido contrario al empuje. Orientación: mientras se mueve, el casco mira hacia
+## donde va (la llama sale siempre por detrás); al parar vuelve rápido pero suave a mirar al punto de
+## mira (`aim`).
 
 const Neon = preload("neon.gd")
 const FLAME_SHADER := preload("res://lurk/assets/flame.gdshader")
 const FLAME_LENGTH := 46.0
 const FLAME_WIDTH := 18.0
+const TURN_RATE := 11.0    # rapidez del giro del casco (suavizado exponencial)
 
 ## Casco mirando a +X (unidades: píxeles del mundo; la nave mide ~34 de largo).
 const HULL := [
@@ -19,6 +21,8 @@ var color := Color("#86F730")
 var aim := 0.0
 var thrust_dir := Vector2.ZERO    # dirección del empuje en el mundo (cero = motor apagado)
 var alpha := 1.0
+var invulnerable := false    # parpadea mientras dura la invulnerabilidad del respawn
+var _t := 0.0
 var _hull: Node2D
 var _flame_pivot: Node2D
 var _flame_mat: ShaderMaterial
@@ -49,14 +53,17 @@ func set_color(c: Color) -> void:
 		_hull.queue_redraw()
 
 func _process(delta: float) -> void:
-	_hull.rotation = aim
+	var heading := thrust_dir.angle() if thrust_dir != Vector2.ZERO else aim
+	_hull.rotation = lerp_angle(_hull.rotation, heading, 1.0 - exp(-TURN_RATE * delta))
 	var target := 1.0 if thrust_dir != Vector2.ZERO else 0.0
 	_power = move_toward(_power, target, delta * (6.0 if target > _power else 3.0))
 	if thrust_dir != Vector2.ZERO:
 		_flame_pivot.rotation = lerp_angle(_flame_pivot.rotation, thrust_dir.angle() + PI, minf(1.0, delta * 18.0))
+	_t += delta
+	var blink := 0.45 + 0.55 * absf(sin(_t * 14.0)) if invulnerable else 1.0
 	_flame_mat.set_shader_parameter("power", _power * alpha)
 	_flame_pivot.visible = _power > 0.01
-	modulate.a = alpha
+	modulate.a = alpha * blink
 
 func _draw_hull() -> void:
 	var hull := PackedVector2Array(HULL)

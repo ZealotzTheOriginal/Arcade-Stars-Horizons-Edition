@@ -40,9 +40,33 @@ const SHIP_TANGENT_KEEP := 0.92
 const VISION_RADIUS := 300.0
 const VISION_MARGIN := 140.0         # se envía un poco más allá para que lo que entra aparezca suave
 
-# ── Salud ────────────────────────────────────────────────
+# ── Salud y daño ─────────────────────────────────────────
 const MAX_HP := 3.0
 const DAMAGED_HP := 1.5
+const BULLET_DAMAGE := 1.5
+const HARD_HIT_DAMAGE := 1.0         # choque a >= 50 % de la velocidad máxima (delata)
+const SOFT_HIT_DAMAGE := 0.1         # choque más suave (silencioso)
+const SOFT_HIT_MIN_SPEED := 60.0     # por debajo, rozar no hace daño
+const HIT_COOLDOWN := 0.5            # un mismo contacto no resta vida varias veces seguidas
+const KILL_CREDIT_TIME := 5.0        # quien te dañó en estos segundos se lleva la muerte
+const RESPAWN_INVULNERABLE := 2.0    # se pierde al disparar
+
+# ── Disparo ──────────────────────────────────────────────
+const AMMO := 3
+const RELOAD_TIME := 5.0             # solo al vaciar el cargador (no hay recarga manual)
+const FIRE_COOLDOWN := 0.28
+const BULLET_SPEED := 1650.0
+const BULLET_RANGE := 1500.0
+const BULLET_RADIUS := 3.0
+const BULLET_VISIBLE_RANGE := 2200.0 # los rivales ven las balas (no lo que iluminan) hasta esta distancia
+const REVEAL_TIME := 3.0             # disparar o chocar fuerte: flecha en la pantalla de los rivales
+
+# ── Túneles de luz (los proyectiles iluminan para quien dispara) ──
+const TUNNEL_RADIUS := 120.0
+const TUNNEL_TIME := 0.7             # lo iluminado vuelve a la oscuridad en este tiempo
+const TUNNEL_SEG_TICKS := 4          # cada cuántos pasos se cierra un tramo de túnel
+const FLASH_RADIUS := 170.0          # destello del impacto de una bala propia
+const FLASH_TIME := 0.5
 
 ## Lado del mapa para `players` jugadores: fijo hasta BASE_PLAYERS; después crece con el área.
 static func map_size_for(players: int) -> float:
