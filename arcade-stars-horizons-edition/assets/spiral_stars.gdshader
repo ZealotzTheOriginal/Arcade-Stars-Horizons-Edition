@@ -1,13 +1,12 @@
 shader_type canvas_item;
-// Marcador de portada: fondo liso con estrellas que giran en espiral alrededor del centro (donde va
-// el logo). Las estrellas viven en coordenadas polares "retorcidas" (ángulo + log del radio), así cada
-// fila de celdas forma un brazo de espiral; al avanzar el tiempo giran y se acercan lentamente al centro.
+// Marcador de portada: fondo liso con estrellas que giran en espiral alrededor del centro. Las
+// estrellas viven en coordenadas polares "retorcidas" (ángulo + log del radio), así cada fila de celdas forma un brazo de espiral; al avanzar el tiempo giran y se acercan lentamente al centro.
 // Ligero a propósito (3 capas, una celda por capa): debe ir bien en gráficas integradas antiguas.
 
 uniform vec2 size_px = vec2(210.0, 210.0);    // tamaño de la tarjeta (px lógicos)
-uniform vec4 bg_color : source_color = vec4(0.098, 0.102, 0.176, 1.0);   // BG_300
+uniform vec4 bg_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 uniform vec4 star_color : source_color = vec4(1.0);
-uniform vec2 center_uv = vec2(0.5, 0.45);
+uniform vec2 center_uv = vec2(0.5, 0.5);
 uniform float spin = 0.06;        // vueltas por segundo
 uniform float inflow = 0.05;      // velocidad hacia el centro
 uniform float fade = 1.0;         // opacidad del árbol (un shader que fija COLOR no hereda el modulate)
@@ -36,8 +35,8 @@ float layer(vec2 p, float arms, float rings, float twist, float speed, float see
 	float size = mix(0.6, 1.5, hash(cell + seed + 9.3));
 	float d = length(p - sp);
 	float star = 1.0 - smoothstep(size * 0.5, size * 0.5 + 1.0, d);
-	// Se apagan cerca del logo y en el borde de la tarjeta
-	float k = smoothstep(18.0, 46.0, sr) * (1.0 - smoothstep(0.42, 0.62, sr / size_px.x));
+	// Se apagan en el mismo centro (donde se apiñarían) y en el borde de la tarjeta
+	float k = smoothstep(3.0, 14.0, sr) * (1.0 - smoothstep(0.42, 0.62, sr / size_px.x));
 	float twinkle = 0.55 + 0.45 * sin(TIME * (1.0 + 2.0 * h) + h * 40.0);
 	return star * k * twinkle;
 }

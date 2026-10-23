@@ -14,7 +14,6 @@ const SPIRAL_SHADER := preload("res://assets/spiral_stars.gdshader")
 const SIZE := Vector2(210, 210)
 const RADIUS := 4
 const PAD := 12
-const LOGO_FRACTION := 0.3    # tamaño del logo del marcador respecto a la tarjeta
 const CONFIRM_SECONDS := 3.0
 
 enum Action { PLAY, DOWNLOAD, UNINSTALL }
@@ -62,7 +61,7 @@ static func cover_texture(id: String) -> Texture2D:
 		return null
 	return load(path) as Texture2D
 
-## Marcador sin portada: fondo liso con estrellas en espiral (shader) y el logo en el centro.
+## Marcador sin portada: fondo negro con estrellas girando en espiral (shader).
 func _build_placeholder() -> void:
 	var bg := ColorRect.new()
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -70,19 +69,9 @@ func _build_placeholder() -> void:
 	_placeholder_mat = ShaderMaterial.new()
 	_placeholder_mat.shader = SPIRAL_SHADER
 	_placeholder_mat.set_shader_parameter("size_px", SIZE)
-	_placeholder_mat.set_shader_parameter("bg_color", Palette.BG_300)
+	_placeholder_mat.set_shader_parameter("bg_color", Palette.BLACK)
 	bg.material = _placeholder_mat
 	add_child(bg)
-	var logo_size := SIZE.x * LOGO_FRACTION
-	var logo := TextureRect.new()
-	logo.texture = AppTheme.crisp_logo(roundi(logo_size * get_window().content_scale_factor))
-	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	logo.modulate = Palette.fade(Palette.FG_100, 0.85)
-	logo.position = SIZE * Vector2(0.5, 0.45) - Vector2(logo_size, logo_size) / 2.0
-	logo.size = Vector2(logo_size, logo_size)
-	add_child(logo)
 
 func _scrim(top: bool) -> TextureRect:
 	var g := Gradient.new()
