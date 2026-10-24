@@ -163,3 +163,10 @@ const GLOW_ROCK_MIN_R := 55.0
 const GLOW_ROCK_LIGHT := 140.0       # luz alrededor (además de su radio), para todos
 const GLOW_ROCK_GEMS := 12
 const OVERLOAD_BUY_DISTANCE := 190.0 # la Sobrecarga comprada aparece cerca, a la vista
+
+# ── Calidad de vida (0.3) ────────────────────────────────
+const DEATH_GEMS := 3                # gemas que suelta una nave al morir…
+const DEATH_GEMS_PER_UPGRADE := 2    # …más 2 por cada mejora que llevaba encima
+const ITEM_MAP_MARGIN := 40.0        # gemas y power-ups siempre dentro del mapa, con este margen
+const ROCK_OUTLINE_EXTRA := 260.0    # contorno tenue de los asteroides más allá de la visión
+const MISSILE_ZOOM := 1.25           # guiando el misil, la cámara se aleja (25 % más de visión)

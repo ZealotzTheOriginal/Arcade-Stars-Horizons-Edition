@@ -71,3 +71,16 @@ Aclaraciones del diseño tras la primera revisión. Prevalecen sobre las seccion
 * **Asteroides brillantes** (~4 %): iluminan su entorno (también a través de la niebla, para todos); cualquier explosión los hace añicos y sueltan **12 gemas**.
 * **Modo sigilo** (Shift izquierdo; alternar o mantener, a elegir en el menú): **mitad de velocidad**, más control y menos derrape, llama y motor discretos. **Sin sigilo**, el motor deja un **rastro de ruido** (icono propio) que oyen los rivales a menos de 900 px.
 * **Disparar te expone:** durante **1,5 s** todos los jugadores ven tu nave a través de la niebla (además de la flecha de 3 s).
+
+### 8.10. Versión 0.3.0 (24/10/2026)
+* **Tienda:** la tecla la abre y cierra siempre (antes, tras comprar, se quedaba abierta). Se cierra sola al morir.
+* **El Redentor:** mientras lo guías, la pantalla pasa a una **vista táctica de contornos rojos** con glitch, la cámara se **aleja un 25 %**, el misil deja una **estela de fuego rojo** que se disipa, y tu nave se queda quieta mirando hacia donde estaba.
+* **Al morir:** niebla total (no se ve nada de lo que pasa, ni alrededor de tu nave destruida; solo las estrellas del fondo).
+* **Contorno de asteroides** tenue justo más allá de tu visión (más tiempo de reacción a toda velocidad).
+* **Gemas al morir:** **3 + 2 por cada mejora** que llevabas (cada efecto activo, cada misil y cada bloque de +3 de armadura).
+* **Estrellas del fondo** visibles también en la niebla.
+* La **llama** parpadea con la invulnerabilidad del respawn.
+* Gemas y power-ups **siempre dentro del mapa**.
+* **Registro** (arriba a la izquierda) con iconos: *X killed Y* · *X crashed* · *X exploded* · *X joined* · *X left*. La IA se llama **Clustark Ship**.
+* **Radar:** la onda verde muestra los **contornos verdes** de lo que hay en pantalla a su paso, y se apagan antes de la siguiente.
+* La **barra de recarga** empieza vacía (antes aparecía con un tercio ya cargado).

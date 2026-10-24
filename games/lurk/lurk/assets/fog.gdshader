@@ -23,7 +23,10 @@ uniform vec4 glows[MAX_GLOWS];
 uniform int glow_count = 0;
 uniform vec3 occ[MAX_OCC];
 uniform int occ_count = 0;
-uniform float edge = 0.45;    // fracción del radio que ocupa el degradado del borde
+uniform float edge = 0.45;
+// Estrellas de fondo (mismas que space_bg.gdshader): se ven también en la oscuridad
+uniform vec2 cam_pos = vec2(0.0);
+uniform float zoom = 1.0;    // fracción del radio que ocupa el degradado del borde
 
 // Hash sin seno ("hash without sine", D. Hoskins): fract(sin(x)) pierde precisión en algunas GPU y
 // deja bloques con cortes rectos en el ruido.
@@ -52,6 +55,20 @@ float segment_light(vec2 p, vec4 a, vec4 b) {
 	// La intensidad se interpola a lo largo del tramo (la cola del túnel ya se está apagando)
 	float k = mix(a.w, b.w, h);
 	return (1.0 - smoothstep(a.z * 0.35, a.z, d)) * k;
+}
+
+float stars(vec2 p, float cell, float density, float size) {
+	vec2 g = p / cell;
+	vec2 id = floor(g);
+	vec2 f = fract(g);
+	float h = hash(id);
+	if (h > density) {
+		return 0.0;
+	}
+	vec2 c = 0.1 + 0.8 * vec2(hash(id + 3.1), hash(id + 7.7));
+	float d = length((f - c) * cell);
+	float tw = 0.6 + 0.4 * sin(TIME * (0.5 + h * 3.0) + h * 50.0);
+	return (1.0 - smoothstep(0.0, size, d)) * tw;
 }
 
 // Luz con sombras: los asteroides entre la luz y el punto la tapan.
@@ -93,5 +110,9 @@ void fragment() {
 		if (i >= glow_count) break;
 		light = max(light, shadowed_light(q, glows[i]));
 	}
-	COLOR = vec4(0.0, 0.0, 0.0, 1.0 - clamp(light, 0.0, 1.0));
+	vec2 sp = (UV - 0.5) * screen_size / zoom;
+	float s = stars(sp + cam_pos * 0.15, 90.0, 0.35, 1.1) * 0.35;
+	s += stars(sp + cam_pos * 0.35, 140.0, 0.30, 1.4) * 0.5;
+	s += stars(sp + cam_pos * 0.6, 220.0, 0.22, 1.8) * 0.7;
+	COLOR = vec4(vec3(0.75, 0.82, 1.0) * s, 1.0 - clamp(light, 0.0, 1.0));
 }

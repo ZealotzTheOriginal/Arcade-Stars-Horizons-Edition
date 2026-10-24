@@ -32,6 +32,9 @@ const GRID_EVERY := 3       # cada cuántos pasos se rehace la rejilla de astero
 
 ## Tipos de evento (efectos puntuales que el cliente dibuja)
 enum Ev { HIT_ROCK, HIT_SHIP, BOOM, BUMP, SPAWN, BLAST, ROCK_BREAK, PICKUP, CRATE_BREAK, REFLECT, GEM, BUY, CONJURE }
+## Mensajes del registro de la partida (esquina de la pantalla)
+enum Feed { KILL, CRASH, EXPLODE, JOIN, LEAVE }
+const FEED_TIME := 8.0
 
 var size: float
 var tick_count := 0
@@ -50,6 +53,8 @@ var noises: Array = []           # { pos, born, kind, src }  (src: pid, 0 = aste
 var pings: Array = []            # radar: { owner, pos, born }
 var ghosts: Array = []           # sabotaje psiónico: { owner, target, pos, vel, until }
 var events: Array = []           # { tick, kind, pos, who, extra }
+var feed: Array = []             # { id, kind, a, b, born }  (a: protagonista, b: víctima en KILL)
+var _next_feed_id := 1
 var scoring := false             # solo con 2+ humanos (contra la IA no hay puntos)
 var _next_id := 1
 var _next_rock_id := 1
@@ -87,15 +92,18 @@ func add_player(pid: int) -> void:
 		"aim": 0.0, "move": Vector2.ZERO, "thrust": false, "inputs": [], "ack": -1, "score": 0,
 		"alive": true, "ammo": Config.AMMO, "reload_at": 0.0, "next_fire": 0.0, "invuln_until": 0.0,
 		"hit_cooldown_until": 0.0, "last_damager": 0, "last_damage_time": -100.0, "spectre_flash_until": 0.0,
-		"gems": 0, "exposed_until": 0.0, "next_engine_noise": 0.0,
+		"gems": 0, "exposed_until": 0.0, "next_engine_noise": 0.0, "last_cause": "",
 	}
 	_known_shapes[pid] = {}
 	_clear_powerups(players[pid])
 	_respawn(pid)
+	_feed(Feed.JOIN, pid)
 	if pid != BOT_ID:
 		_balance_players()
 
 func remove_player(pid: int) -> void:
+	if players.has(pid):
+		_feed(Feed.LEAVE, pid)
 	players.erase(pid)
 	_known_shapes.erase(pid)
 	missiles = missiles.filter(func(m): return m["owner"] != pid)
@@ -252,7 +260,11 @@ func _step_player(pid: int, dt: float) -> void:
 		pl["ack"] = input["s"]
 	if not input.is_empty():
 		pl["move"] = input["m"]
-		pl["aim"] = input["a"]
+		var steering := missile_of(pid)
+		if steering.is_empty():
+			pl["aim"] = input["a"]
+		else:
+			steering["target_angle"] = input["a"]    # el ratón guía el misil; la nave no gira
 		pl["ship"]["stealth"] = input.get("st", false)
 		if input.get("buy", 0) != 0:
 			_buy(pid, input["buy"])
@@ -276,7 +288,6 @@ func _step_player(pid: int, dt: float) -> void:
 	var missile := missile_of(pid)
 	pl["ship"]["frozen"] = not missile.is_empty()
 	if not missile.is_empty():
-		missile["target_angle"] = pl["aim"]    # el ratón guía el misil
 		if input.get("f", false):
 			_detonate(missile)
 	else:
@@ -312,7 +323,7 @@ func _impact_damage(pid: int, impact: float, other: int) -> void:
 		_event(Ev.BUMP, pl["ship"]["pos"], pid)
 	if _collision_immune(pl):
 		return
-	_damage(pid, Config.HARD_HIT_DAMAGE if hard else Config.SOFT_HIT_DAMAGE, other)
+	_damage(pid, Config.HARD_HIT_DAMAGE if hard else Config.SOFT_HIT_DAMAGE, other, "crash")
 
 ## Naves entre sí: se separan y rebotan como dos círculos (y se dañan como en un choque).
 func _collide_ships() -> void:
@@ -339,10 +350,12 @@ func _collide_ships() -> void:
 
 # ── Daño, muertes, ruido ─────────────────────────────────
 
-func _damage(pid: int, amount: float, source: int) -> void:
+## cause: "bullet", "crash" o "blast" (decide el mensaje del registro si nadie se lleva la muerte).
+func _damage(pid: int, amount: float, source: int, cause: String = "bullet") -> void:
 	var pl: Dictionary = players[pid]
 	if not pl["alive"] or time < pl["invuln_until"]:
 		return
+	pl["last_cause"] = cause
 	var absorbed := minf(pl["armor"], amount)    # la armadura absorbe antes que la vida
 	pl["armor"] -= absorbed
 	pl["ship"]["hp"] = maxf(0.0, pl["ship"]["hp"] - (amount - absorbed))
@@ -362,9 +375,33 @@ func _kill(pid: int) -> void:
 		_detonate(m)
 	_event(Ev.BOOM, pl["ship"]["pos"], pid)
 	flashes.append({"pos": pl["ship"]["pos"], "born": time, "radius": 220.0, "life": Config.BLAST_FLASH_TIME})
+	_drop_gems(pl["ship"]["pos"], Config.DEATH_GEMS + Config.DEATH_GEMS_PER_UPGRADE * _upgrades(pl), 70.0)
 	var killer: int = pl["last_damager"]
 	if killer != 0 and players.has(killer) and time - pl["last_damage_time"] <= Config.KILL_CREDIT_TIME:
 		_score(killer, Config.SCORE_KILL)
+		_feed(Feed.KILL, killer, pid)
+	elif pl["last_cause"] == "crash":
+		_feed(Feed.CRASH, pid)
+	else:
+		_feed(Feed.EXPLODE, pid)
+
+## Mejoras que lleva encima un jugador (para las gemas que suelta al morir): cada efecto activo, cada
+## misil y cada bloque de +3 de armadura.
+func _upgrades(pl: Dictionary) -> int:
+	var n := 0
+	for flag in ["visor", "radar", "heavy", "explosive"]:
+		if pl[flag]:
+			n += 1
+	for until in ["shield_until", "spectre_until", "overload_until"]:
+		if time < pl[until]:
+			n += 1
+	n += pl["missiles"]
+	n += int(ceil(pl["armor"] / Config.ARMOR_GAIN))
+	return n
+
+func _feed(kind: int, a: int, b: int = 0) -> void:
+	feed.append({"id": _next_feed_id, "kind": kind, "a": a, "b": b, "born": time})
+	_next_feed_id += 1
 
 func _score(pid: int, points: int) -> void:
 	if scoring and players.has(pid):
@@ -584,7 +621,7 @@ func _explode(pos: Vector2, radius: float, inner_damage: float, outer_damage: fl
 			continue
 		var d: float = pos.distance_to(pl["ship"]["pos"])
 		if d <= radius + Config.SHIP_RADIUS:
-			_damage(pid, inner_damage if d <= radius * 0.5 else outer_damage, owner)
+			_damage(pid, inner_damage if d <= radius * 0.5 else outer_damage, owner, "blast")
 	if crate.get("alive", false) and pos.distance_to(crate["pos"]) <= radius + Config.CRATE_RADIUS:
 		_break_crate()
 	var changed := false
@@ -634,7 +671,7 @@ func _carve(a: Dictionary, pos: Vector2, radius: float) -> void:
 ## Gemas sueltas (de una roca rota) repartidas por donde estaba.
 func _drop_gems(center: Vector2, count: int, spread: float) -> void:
 	for i in count:
-		var pos := center + Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(0.0, spread * 0.8)
+		var pos := _inside_map(center + Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(0.0, spread * 0.8))
 		gems.append({"id": _next_gem_id, "pos": pos, "active": true, "respawn_at": 0.0, "bonus": true})
 		_next_gem_id += 1
 	_rebuild_gem_grid()
@@ -687,14 +724,23 @@ func _push_items_out() -> void:
 	if crate.get("alive", false):
 		_push_out(crate, Config.CRATE_RADIUS + 6.0)
 
+## Mantiene un punto dentro del mapa (con margen).
+func _inside_map(p: Vector2, margin: float = Config.ITEM_MAP_MARGIN) -> Vector2:
+	return p.clamp(Vector2(margin, margin), Vector2(size - margin, size - margin))
+
 func _push_out(item: Dictionary, margin: float) -> bool:
+	item["pos"] = _inside_map(item["pos"])
 	var pos: Vector2 = item["pos"]
 	for i in _grid.query(pos):
 		var a: Dictionary = asteroids[i]
 		var d := pos - (a["pos"] as Vector2)
 		var need: float = a["r"] + margin
 		if d.length() < need:
-			item["pos"] = (a["pos"] as Vector2) + (d.normalized() if d != Vector2.ZERO else Vector2.RIGHT) * need
+			var out: Vector2 = (a["pos"] as Vector2) + (d.normalized() if d != Vector2.ZERO else Vector2.RIGHT) * need
+			# Contra el borde no se puede empujar hacia fuera: se rodea la roca por el otro lado
+			if _inside_map(out) != out:
+				out = (a["pos"] as Vector2) - (d.normalized() if d != Vector2.ZERO else Vector2.RIGHT) * need
+			item["pos"] = _inside_map(out)
 			return true
 	return false
 
@@ -716,7 +762,7 @@ func _spawn_gems(region: Rect2) -> void:
 	for y in rows:
 		for x in cols:
 			var cell := Rect2(region.position + Vector2(x, y) * Config.GEM_CELL, Vector2.ONE * Config.GEM_CELL)
-			gems.append({"id": _next_gem_id, "pos": WorldGen.gem_position(_rng, cell, asteroids, _grid), "active": true, "respawn_at": 0.0, "bonus": false})
+			gems.append({"id": _next_gem_id, "pos": _inside_map(WorldGen.gem_position(_rng, cell, asteroids, _grid)), "active": true, "respawn_at": 0.0, "bonus": false})
 			_next_gem_id += 1
 	_rebuild_gem_grid()
 
@@ -749,7 +795,7 @@ func _step_gems() -> void:
 		if not g["active"] and not g["bonus"] and time >= g["respawn_at"]:
 			# Reaparece en otro sitio aleatorio del mapa
 			var cell := Rect2(Vector2(_rng.randf_range(0, size - Config.GEM_CELL), _rng.randf_range(0, size - Config.GEM_CELL)), Vector2.ONE * Config.GEM_CELL)
-			g["pos"] = WorldGen.gem_position(_rng, cell, asteroids, _grid)
+			g["pos"] = _inside_map(WorldGen.gem_position(_rng, cell, asteroids, _grid))
 			g["active"] = true
 			moved = true
 	if moved:
@@ -950,6 +996,7 @@ func _expire() -> void:
 	noises = noises.filter(func(n): return time - n["born"] < Config.REVEAL_TIME)
 	pings = pings.filter(func(p): return time - p["born"] < Config.RADAR_SHOW)
 	ghosts = ghosts.filter(func(g): return time < g["until"])
+	feed = feed.filter(func(f): return time - f["born"] < FEED_TIME)
 
 # ── Visión ───────────────────────────────────────────────
 
@@ -961,8 +1008,9 @@ func _vision_radius(pl: Dictionary) -> float:
 func _sources(pid: int) -> Dictionary:
 	var pl: Dictionary = players[pid]
 	var eye: Vector2 = pl["ship"]["pos"]
-	var vision := _vision_radius(pl) if pl["alive"] else Config.VISION_RADIUS * 0.6
-	var circles: Array = [[eye, vision]]
+	if not pl["alive"]:
+		return {"circles": [], "segs": []}    # destruido: niebla total, no ve nada
+	var circles: Array = [[eye, _vision_radius(pl)]]
 	var segs: Array = []
 	var near := Config.BULLET_VISIBLE_RANGE
 	for l in lights:
@@ -1073,9 +1121,11 @@ func state_for(pid: int) -> Dictionary:
 	var ast := PackedFloat32Array()
 	var shapes := {}
 	var known: Dictionary = _known_shapes.get(pid, {})
-	for i in _candidates(_grid, src, margin + Config.ASTEROID_MAX_R):
+	# Los asteroides se envían un poco más allá de la luz: el cliente dibuja su contorno tenue
+	var outline := Config.ROCK_OUTLINE_EXTRA if pl["alive"] else 0.0
+	for i in _candidates(_grid, src, margin + outline + Config.ASTEROID_MAX_R):
 		var a: Dictionary = asteroids[i]
-		if _is_lit(src, a["pos"], margin + a["r"]):
+		if _is_lit(src, a["pos"], margin + outline + a["r"]):
 			ast.append_array([a["id"], a["pos"].x, a["pos"].y, a["vel"].x, a["vel"].y, a["gen_r"], a["rot"], a["spin"], a["ver"],
 				1.0 if a.get("glow", false) else 0.0])
 			# Las formas esculpidas se envían una vez por versión
@@ -1140,6 +1190,12 @@ func state_for(pid: int) -> Dictionary:
 		"pu": pu, "cr": cr, "bl": bl, "ms": ms, "fl": fl, "nz": nz, "rd": rd, "ev": ev, "sc": pl["score"]}
 	if not shapes.is_empty():
 		out["ash"] = shapes
+	# Registro: [id, tipo, a, b] de los mensajes recientes
+	var kf: Array = []
+	for f in feed:
+		kf.append([f["id"], f["kind"], f["a"], f["b"]])
+	if not kf.is_empty():
+		out["kf"] = kf
 	if not gh.is_empty():
 		out["gh"] = gh
 	if scoring:

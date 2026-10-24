@@ -32,6 +32,11 @@ const FOG_SHADER := preload("res://lurk/assets/fog.gdshader")
 const BG_SHADER := preload("res://lurk/assets/space_bg.gdshader")
 const GLOW_SHADER := preload("res://lurk/assets/overload_glow.gdshader")
 const GLITCH_SHADER := preload("res://lurk/assets/glitch.gdshader")
+const EDGE_SHADER := preload("res://lurk/assets/edge_view.gdshader")
+const BOT_NAME := "Clustark Ship"
+const MISSILE_TRAIL_TIME := 1.1    # la estela de fuego del misil se disipa en este tiempo
+const MISSILE_TRAIL_STEP := 9.0
+const OUTLINE_COLOR := Color("#8FA8D8")
 
 const DT := 1.0 / Config.TICK_RATE
 const INTERP_TICKS := Config.SNAPSHOT_EVERY * 2.0    # retardo de interpolación de las naves ajenas
@@ -80,6 +85,12 @@ var _buy_queued := 0                  # power-up que se compra en el siguiente p
 var _stealth_on := false              # modo sigilo (alternado con la tecla)
 var _local_missile: Dictionary = {}   # misil propio predicho { pos, prev, angle }
 var _glitch_pulse := 0.0              # glitch breve (Sobrecarga comprada)
+var _ship_aim := 0.0                  # orientación de la nave (guiando el misil se queda quieta)
+var _missile_fx := 0.0                # 0..1: efectos de pantalla mientras guías el misil
+var _missile_trails: Dictionary = {}  # id de misil -> [{ pos, born }]
+var _names: Dictionary = {}           # pid -> nombre (para el registro, aunque ya se haya ido)
+var _seen_feed: Dictionary = {}       # ids de mensajes del registro ya mostrados
+var _zoom_k := 1.0                    # 1 normal, MISSILE_ZOOM guiando el misil
 var _launch_queued := false
 var _respawn_queued := false
 var _shake := 0.0
@@ -117,6 +128,12 @@ var _ship_layer: Node2D
 var _fx_layer: Node2D
 var _above_fog: CanvasLayer           # luz que se ve en la oscuridad (Sobrecarga, radar)
 var _radar_layer: Node2D
+var _outline_layer: Node2D            # contornos tenues de asteroides más allá de la visión
+var _trail_layer: Node2D              # estelas de fuego de los misiles
+var _edge_mat: ShaderMaterial         # vista de contornos rojos (misil)
+var _edge_rect: ColorRect
+var _radar_mat: ShaderMaterial        # contornos verdes en la onda del radar
+var _radar_rect: ColorRect
 var _camera: Camera2D
 var _border: Node2D                   # borde del mapa: solo aparece al acercarse mucho
 var _asteroids: Dictionary = {}       # id -> { view, pos, vel, rot, spin, tk, seen, r, points, ver, gen_r }
@@ -157,7 +174,13 @@ func _color_of(pid: int) -> Color:
 	return BOT_COLOR if pid < 0 else _ctx.player_color(pid)
 
 func _name_of(pid: int) -> String:
-	return "AI" if pid < 0 else _ctx.player_name(pid)
+	if pid < 0:
+		return BOT_NAME
+	var name: String = _ctx.player_name(pid)
+	if name == "?" or name == "":
+		return _names.get(pid, "Player")
+	_names[pid] = name
+	return name
 
 # ── Construcción ─────────────────────────────────────────
 
@@ -188,6 +211,9 @@ func _build() -> void:
 	_bullet_layer = BulletLayer.new()
 	_bullet_layer.mine_color = _color_of(_ctx.my_id())
 	_world.add_child(_bullet_layer)
+	_trail_layer = Node2D.new()
+	_trail_layer.draw.connect(_draw_missile_trails)
+	_world.add_child(_trail_layer)
 	_ship_layer = Node2D.new()
 	_world.add_child(_ship_layer)
 	_fx_layer = Node2D.new()
@@ -216,13 +242,29 @@ func _build() -> void:
 	_above_fog.layer = 6
 	_above_fog.follow_viewport_enabled = true
 	add_child(_above_fog)
+	_outline_layer = Node2D.new()
+	_outline_layer.draw.connect(_draw_outlines)
+	_above_fog.add_child(_outline_layer)
 	_radar_layer = Node2D.new()
 	_radar_layer.draw.connect(_draw_radar)
 	_above_fog.add_child(_radar_layer)
 
+	# Efectos de pantalla (leen la pantalla: cada uno con su copia del fondo para encadenarse)
+	_radar_rect = _screen_effect(13)
+	_radar_mat = _radar_rect.material
+	_radar_mat.set_shader_parameter("mode", 1)
+	_radar_mat.set_shader_parameter("edge_color", Color("#86F730"))
+	_edge_rect = _screen_effect(14)
+	_edge_mat = _edge_rect.material
+	_edge_mat.set_shader_parameter("mode", 0)
+	_edge_mat.set_shader_parameter("edge_color", Color("#FF3B4E"))
+
 	var glitch_layer := CanvasLayer.new()
 	glitch_layer.layer = 15
 	add_child(glitch_layer)
+	var copy := BackBufferCopy.new()
+	copy.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	glitch_layer.add_child(copy)
 	_glitch_rect = ColorRect.new()
 	_glitch_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_glitch_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -236,6 +278,7 @@ func _build() -> void:
 	ui_layer.layer = 20
 	add_child(ui_layer)
 	_hud = Hud.new()
+	_hud.reload_time = Config.RELOAD_TIME
 	_hud.respawn_requested.connect(func(): _respawn_queued = true)
 	ui_layer.add_child(_hud)
 	_shop = Shop.new()
@@ -257,6 +300,24 @@ func _build() -> void:
 	_audio.setup(_world)
 	for bus in Settings.VOLUMES:
 		_audio.set_volume(bus, Settings.volume(bus))
+
+## Capa de efecto a pantalla completa con el shader de contornos (oculta hasta que se use).
+func _screen_effect(layer: int) -> ColorRect:
+	var cl := CanvasLayer.new()
+	cl.layer = layer
+	add_child(cl)
+	var copy := BackBufferCopy.new()
+	copy.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	cl.add_child(copy)
+	var rect := ColorRect.new()
+	rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mat := ShaderMaterial.new()
+	mat.shader = EDGE_SHADER
+	rect.material = mat
+	rect.visible = false
+	cl.add_child(rect)
+	return rect
 
 func _draw_border() -> void:
 	var s := _size
@@ -281,11 +342,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	var pressed: bool = (event is InputEventKey and event.pressed and not event.echo) or (event is InputEventMouseButton and event.pressed)
 	if not pressed:
 		return
-	if event.is_action_pressed("lurk_shop"):
-		_shop.visible = not _shop.visible
-		_audio.play("ui_click", -10.0)
-		get_viewport().set_input_as_handled()
-		return
 	if event.is_action_pressed("lurk_stealth") and Settings.stealth_mode() == "toggle":
 		_stealth_on = not _stealth_on
 		return
@@ -295,6 +351,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		_fire_queued = true    # disparar (o detonar el misil que estás guiando)
 	elif event.is_action_pressed("lurk_missile"):
 		_launch_queued = true  # lanzar misil
+
+## La tienda se abre y cierra aquí, antes que la interfaz: así un botón de la tienda con el foco no
+## se queda con la tecla (antes, tras comprar, Tab movía el foco y la tienda no se cerraba).
+func _input(event: InputEvent) -> void:
+	if not _started or _menu.visible or _menu.is_capturing():
+		return
+	if event.is_action_pressed("lurk_shop") and not event.is_echo():
+		_shop.visible = not _shop.visible and _alive
+		_audio.play("ui_click", -10.0)
+		get_viewport().set_input_as_handled()
 
 func _toggle_fullscreen() -> void:
 	_set_fullscreen(not _ctx.is_fullscreen())
@@ -342,6 +408,8 @@ func _fixed_step() -> void:
 	var my_missile := _my_missile_pos()
 	var origin: Vector2 = my_missile if my_missile != Vector2.INF else _me.position
 	_aim = (get_global_mouse_position() - origin).angle()
+	if my_missile == Vector2.INF:
+		_ship_aim = _aim
 	_step_local_missile()
 	_seq += 1
 	_pred["stealth"] = _stealth_active()
@@ -482,6 +550,9 @@ func _on_state(s: Dictionary) -> void:
 	for g in s.get("gh", []):
 		_ghosts.append({"owner": g[0], "pos": Vector2(g[1], g[2]), "vel": Vector2(g[3], g[4]), "tk": tk})
 	_update_ranking(s.get("rk", []))
+	for pid in s.get("sh", {}):
+		_name_of(pid)
+	_update_feed(s.get("kf", []))
 	_nearest_pickup = s.get("np", PackedFloat32Array())
 	_play_events(s.get("ev", PackedFloat32Array()))
 
@@ -515,6 +586,8 @@ func _reconcile(me: PackedFloat32Array, ack: int) -> void:
 	_ammo = maxi(0, int(me[7]) - unconfirmed_shots)
 	_update_hud_from_me(me)
 	_me.visible = _alive
+	if not _alive:
+		_shop.visible = false
 	if not _has_state or (_alive and not was_alive):
 		# Primer estado o reaparición: sin suavizar el salto
 		_has_state = true
@@ -570,6 +643,15 @@ func _useless_now(me: PackedFloat32Array) -> Dictionary:
 		for k in Config.SHOP_PRICES:
 			out[k] = true
 	return out
+
+## Mensajes nuevos del registro: [id, tipo, a, b].
+func _update_feed(kf: Array) -> void:
+	for f in kf:
+		var id: int = f[0]
+		if _seen_feed.has(id):
+			continue
+		_seen_feed[id] = true
+		_hud.add_feed({"kind": f[1], "a": _name_of(f[2]), "b": _name_of(f[3]) if f[3] != 0 else "", "color": _color_of(f[2])})
 
 func _update_ranking(rk: Array) -> void:
 	var rows: Array = []
@@ -800,7 +882,7 @@ func _update_views(delta: float) -> void:
 	var alpha := _acc / DT
 	var my_pos: Vector2 = _prev_pos.lerp(_pred["pos"], alpha) + _render_offset
 	_me.position = my_pos
-	_me.aim = _aim
+	_me.aim = _ship_aim
 	_me.thrust_dir = _move
 	_me.invulnerable = _invuln > 0.0
 	_me.shield = _me_value(16) > 0.0
@@ -816,7 +898,11 @@ func _update_views(delta: float) -> void:
 	var edge_dist := minf(minf(focus.x, focus.y), minf(_size - focus.x, _size - focus.y))
 	_border.modulate.a = 1.0 - smoothstep(BORDER_SHOW_NEAR, BORDER_SHOW_FAR, edge_dist)
 	var vp := get_viewport().get_visible_rect().size
-	var zoom := vp.y / VIEW_HEIGHT
+	var steering := missile_pos != Vector2.INF
+	_missile_fx = move_toward(_missile_fx, 1.0 if steering else 0.0, delta * 3.0)
+	# Guiando el misil la cámara se aleja (más mapa a la vista)
+	_zoom_k = lerpf(1.0, Config.MISSILE_ZOOM, ease(_missile_fx, -1.6))
+	var zoom := vp.y / (VIEW_HEIGHT * _zoom_k)
 	_camera.zoom = Vector2(zoom, zoom)
 
 	_fade_entities(_asteroids, delta, FADE_SPEED, func(a):
@@ -843,12 +929,20 @@ func _update_views(delta: float) -> void:
 	_radar_layer.queue_redraw()
 	_glitch = move_toward(_glitch, 1.0 if not _ghosts.is_empty() else 0.0, delta * 3.0)
 	_glitch_pulse = maxf(0.0, _glitch_pulse - delta)
-	var glitch := maxf(_glitch, minf(_glitch_pulse, 0.6))
+	var glitch := maxf(maxf(_glitch, minf(_glitch_pulse, 0.6)), _missile_fx * 0.45)
+	# Misil: todo pasa a contornos rojos
+	_edge_rect.visible = _missile_fx > 0.0
+	_edge_mat.set_shader_parameter("amount", _missile_fx)
+	_update_radar_wave(vp)
+	_update_missile_trails()
+	_outline_layer.queue_redraw()
 	_glitch_rect.visible = glitch > 0.0
 	_glitch_mat.set_shader_parameter("amount", glitch)
 	_bg_mat.set_shader_parameter("screen_size", vp)
 	_bg_mat.set_shader_parameter("cam_pos", focus)
 	_bg_mat.set_shader_parameter("zoom", zoom)
+	_fog_mat.set_shader_parameter("cam_pos", focus)
+	_fog_mat.set_shader_parameter("zoom", zoom)
 
 ## Motor y misil en bucle, y ruidos lejanos (delación) amortiguados desde su dirección.
 func _update_audio(delta: float, listener: Vector2) -> void:
@@ -1065,7 +1159,13 @@ func _update_fog(my_pos: Vector2, vp: Vector2) -> void:
 	var lights := PackedVector4Array()
 	var sp: Vector2 = xf * my_pos
 	var vision := Config.VISION_RADIUS * _me_value(12, 1.0)
-	lights.append(Vector4(sp.x, sp.y, vision * zoom, 1.0) if _alive else Vector4(sp.x, sp.y, Config.VISION_RADIUS * 0.6 * zoom, 0.6))
+	if not _alive:
+		# Destruido: no se ve nada (solo las estrellas del fondo)
+		_fog_mat.set_shader_parameter("screen_size", vp)
+		for k in ["light_count", "seg_count", "glow_count", "occ_count"]:
+			_fog_mat.set_shader_parameter(k, 0)
+		return
+	lights.append(Vector4(sp.x, sp.y, vision * zoom, 1.0))
 	for f in _flashes:
 		var k: float = 1.0 - (_time - f["born"]) / f["life"]
 		if k > 0.0 and lights.size() < MAX_FOG_LIGHTS:
@@ -1168,8 +1268,8 @@ func _update_reveals(vp: Vector2) -> void:
 	var xf := get_viewport().get_canvas_transform()
 	var center := vp / 2.0
 	var out: Array = []
-	if vp.x < 200.0 or vp.y < 200.0:
-		_hud.reveals = out    # ventana minúscula (p. ej. sin pantalla): nada que dibujar
+	if vp.x < 200.0 or vp.y < 200.0 or not _alive:
+		_hud.reveals = out    # destruido (o ventana minúscula): no se percibe nada
 		return
 	for r in _noises:
 		var age: float = _time - r["born"]
@@ -1202,3 +1302,74 @@ func _update_reveals(vp: Vector2) -> void:
 			pos = center + dir * minf(half.x / maxf(absf(dir.x), 0.0001), half.y / maxf(absf(dir.y), 0.0001))
 		out.append({"pos": pos, "angle": dir.angle(), "on_screen": on_screen, "alpha": 1.0 - age / Config.RADAR_SHOW, "kind": NOISE_RADAR})
 	_hud.reveals = out
+
+## Contornos tenues de los asteroides justo fuera de tu visión (más tiempo de reacción a toda velocidad).
+## El servidor envía las rocas un poco más allá de la luz; aquí se dibuja solo su silueta, que se
+## desvanece hacia fuera. Va por encima de la niebla.
+func _draw_outlines() -> void:
+	if not _alive:
+		return
+	var eye: Vector2 = _me.position
+	var vision := Config.VISION_RADIUS * _me_value(12, 1.0)
+	for id in _asteroids:
+		var a: Dictionary = _asteroids[id]
+		var center := _asteroid_pos(a)
+		var edge_dist: float = eye.distance_to(center) - a["r"]
+		# Dentro de la luz ya se ve la roca entera; el contorno aparece donde empieza la oscuridad
+		var k := smoothstep(vision * 0.55, vision * 0.95, edge_dist) * (1.0 - smoothstep(vision + Config.ROCK_OUTLINE_EXTRA * 0.5, vision + Config.ROCK_OUTLINE_EXTRA, edge_dist))
+		if k <= 0.01:
+			continue
+		var rot := _asteroid_rot(a)
+		var pts := PackedVector2Array()
+		for p in a["points"]:
+			pts.append(center + (p as Vector2).rotated(rot))
+		pts.append(pts[0])
+		_outline_layer.draw_polyline(pts, Color(OUTLINE_COLOR, 0.32 * k), 1.2, true)
+
+## Onda del radar: contornos verdes de lo que hay en pantalla, solo en la franja que barre la onda.
+func _update_radar_wave(vp: Vector2) -> void:
+	var since_ping := _time - _last_ping
+	var active := since_ping < 1.2 and _alive and _me_value(13) > 0.0
+	_radar_rect.visible = active
+	if not active:
+		return
+	var xf := get_viewport().get_canvas_transform()
+	var zoom: float = xf.get_scale().x
+	var k := since_ping / 1.2
+	_radar_mat.set_shader_parameter("screen_size", vp)
+	_radar_mat.set_shader_parameter("ring_center", xf * _me.position)
+	_radar_mat.set_shader_parameter("ring_radius", (40.0 + k * 900.0) * zoom)
+	_radar_mat.set_shader_parameter("ring_width", 170.0 * zoom)
+	_radar_mat.set_shader_parameter("amount", 1.0 - smoothstep(0.7, 1.0, k))
+
+## Estela de fuego de los misiles: puntos que se van apagando.
+func _update_missile_trails() -> void:
+	for id in _missiles:
+		var m: Dictionary = _missiles[id]
+		var pos: Vector2 = m["view"].position
+		var trail: Array = _missile_trails.get(id, [])
+		if trail.is_empty() or (trail[-1]["pos"] as Vector2).distance_to(pos) >= MISSILE_TRAIL_STEP:
+			trail.append({"pos": pos, "born": _time})
+		_missile_trails[id] = trail
+	for id in _missile_trails.keys():
+		var trail: Array = _missile_trails[id].filter(func(t): return _time - t["born"] < MISSILE_TRAIL_TIME)
+		if trail.is_empty():
+			_missile_trails.erase(id)
+		else:
+			_missile_trails[id] = trail
+	_trail_layer.queue_redraw()
+
+func _draw_missile_trails() -> void:
+	var hot := Color("#FFB86B")
+	var red := Color("#FF3B4E")
+	for id in _missile_trails:
+		var trail: Array = _missile_trails[id]
+		for i in range(1, trail.size()):
+			var k: float = 1.0 - (_time - trail[i]["born"]) / MISSILE_TRAIL_TIME
+			if k <= 0.0:
+				continue
+			var a: Vector2 = trail[i - 1]["pos"]
+			var b: Vector2 = trail[i]["pos"]
+			# Halo ancho rojo y núcleo caliente que se enfría al apagarse
+			_trail_layer.draw_line(a, b, Color(red, 0.18 * k), 14.0 * k + 2.0, true)
+			_trail_layer.draw_line(a, b, Color(red.lerp(hot, k), 0.75 * k), 4.0 * k + 1.0, true)

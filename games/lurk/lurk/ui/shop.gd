@@ -77,6 +77,7 @@ func _row(kind: int) -> Control:
 	name.add_theme_font_size_override("font_size", 13)
 	h.add_child(name)
 	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE    # si cogiera el foco, Tab lo movería entre botones en vez de cerrar la tienda
 	b.custom_minimum_size = Vector2(64, 30)
 	b.text = str(Config.SHOP_PRICES[kind])
 	b.add_theme_color_override("font_color", GEM_COLOR)

@@ -36,12 +36,14 @@ var ammo := 3
 var max_ammo := 3
 var special_ammo := 0
 var reload_left := 0.0
-var reload_time := 5.0
+var reload_time := 3.0    # lo fija el juego (Config.RELOAD_TIME)
 var missiles := 0
 var gems := 0
 var stealth := false
 ## Efectos activos: [{ kind, left (s, -1 = hasta morir), total }]
 var effects: Array = []
+## Registro de la partida: [{ kind, a, b, born }] con nombres ya resueltos (muertes, entradas, salidas)
+var feed: Array = []
 ## Ranking: [{ name, score, me }] (vacío = sin puntos, p. ej. contra la IA)
 var ranking: Array = []
 ## Flechas: [{ pos: Vector2 (pantalla), angle, on_screen, alpha, kind }]
@@ -119,6 +121,7 @@ func _draw_hud() -> void:
 			_canvas.draw_rect(Rect2(Vector2(inset, inset), vp - Vector2(inset, inset) * 2.0), Color(HP_LOW_COLOR, 0.10 * a * (1.0 - i / 6.0)), false, 10.0)
 	_draw_reveals()
 	_draw_ranking(vp)
+	_draw_feed()
 	if _toast_t > 0.0:
 		var font := Style.font(700, 4)
 		var a := minf(1.0, _toast_t / 0.4)
@@ -245,3 +248,106 @@ func _stealth_icon(c: Vector2) -> void:
 	for k in [-1, 0, 1]:
 		var base := c + Vector2(k * 4.0, 3.5)
 		_canvas.draw_line(base, base + Vector2(k * 1.5, 3.0), col, 1.2, true)
+
+# ── Registro de la partida (arriba a la izquierda) ───────
+
+const FEED_KILL := 0
+const FEED_CRASH := 1
+const FEED_EXPLODE := 2
+const FEED_JOIN := 3
+const FEED_LEAVE := 4
+const FEED_SHOW := 6.0
+const FEED_FADE := 1.2
+const FEED_MAX := 5
+
+## Añade una línea al registro (con la hora de ahora para su desvanecido).
+func add_feed(entry: Dictionary) -> void:
+	entry["born"] = _t
+	feed.append(entry)
+	if feed.size() > 20:
+		feed.pop_front()
+
+## Cada línea: [icono] NOMBRE VERBO ([calavera] VÍCTIMA si es una muerte).
+func _draw_feed() -> void:
+	var font := Style.font(600, 1)
+	var y := 30.0
+	var shown := 0
+	for i in range(feed.size() - 1, -1, -1):
+		if shown >= FEED_MAX:
+			break
+		var e: Dictionary = feed[i]
+		var age: float = _t - e["born"]
+		if age > FEED_SHOW:
+			continue
+		var a := 1.0 - clampf((age - (FEED_SHOW - FEED_FADE)) / FEED_FADE, 0.0, 1.0)
+		var x := MARGIN
+		var white := Color(1, 1, 1, 0.95 * a)
+		var muted := Color(Style.FG_MUTED, 0.6 * a)
+		match int(e["kind"]):
+			FEED_KILL:
+				_feed_ship(Vector2(x + 8, y - 5), Color(e["color"], a))
+				x = _feed_text(font, x + 22, y, e["a"], white)
+				x = _feed_text(font, x + 6, y, "killed", muted)
+				_feed_skull(Vector2(x + 14, y - 5), Color(HP_LOW_COLOR, a))
+				_feed_text(font, x + 28, y, e["b"], white)
+			FEED_CRASH:
+				_feed_burst(Vector2(x + 8, y - 5), Color(CRASH_COLOR, a))
+				x = _feed_text(font, x + 22, y, e["a"], white)
+				_feed_text(font, x + 6, y, "crashed", muted)
+			FEED_EXPLODE:
+				_feed_explosion(Vector2(x + 8, y - 5), Color("#FF9F43", a))
+				x = _feed_text(font, x + 22, y, e["a"], white)
+				_feed_text(font, x + 6, y, "exploded", muted)
+			FEED_JOIN:
+				_feed_sign(Vector2(x + 8, y - 5), true, Color(HP_COLOR, a))
+				x = _feed_text(font, x + 22, y, e["a"], white)
+				_feed_text(font, x + 6, y, "joined", muted)
+			FEED_LEAVE:
+				_feed_sign(Vector2(x + 8, y - 5), false, Color(Style.FG_MUTED, a))
+				x = _feed_text(font, x + 22, y, e["a"], white)
+				_feed_text(font, x + 6, y, "left", muted)
+		y += 24.0
+		shown += 1
+
+## Escribe en MAYÚSCULAS y devuelve dónde termina.
+func _feed_text(font: Font, x: float, y: float, text: String, col: Color) -> float:
+	var t := text.to_upper()
+	_canvas.draw_string(font, Vector2(x, y), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
+	return x + font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+
+## Nave en miniatura (el casco de Lurk) del color de quien mató.
+func _feed_ship(c: Vector2, col: Color) -> void:
+	var pts := PackedVector2Array([c + Vector2(8, 0), c + Vector2(-5, -6), c + Vector2(-2, 0), c + Vector2(-5, 6)])
+	_canvas.draw_colored_polygon(pts, Color(col, col.a * 0.35))
+	_canvas.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), col, 1.4, true)
+
+## Calavera: cráneo, ojos y dientes.
+func _feed_skull(c: Vector2, col: Color) -> void:
+	_canvas.draw_circle(c + Vector2(0, -1), 6.0, col, true, -1.0, true)
+	_canvas.draw_rect(Rect2(c + Vector2(-3.5, 3), Vector2(7, 4)), col)
+	var hole := Color(0, 0, 0, col.a)
+	_canvas.draw_circle(c + Vector2(-2.3, -1.5), 1.6, hole, true, -1.0, true)
+	_canvas.draw_circle(c + Vector2(2.3, -1.5), 1.6, hole, true, -1.0, true)
+	_canvas.draw_line(c + Vector2(-1.2, 4), c + Vector2(-1.2, 7), hole, 1.0)
+	_canvas.draw_line(c + Vector2(1.2, 4), c + Vector2(1.2, 7), hole, 1.0)
+
+## Choque: estallido (igual que el icono de ruido de choque).
+func _feed_burst(c: Vector2, col: Color) -> void:
+	for k in 8:
+		var d := Vector2.from_angle(k * PI / 4.0 + 0.2)
+		_canvas.draw_line(c + d * 2.5, c + d * (8.0 if k % 2 == 0 else 5.5), col, 1.5, true)
+
+## Explosión: bola con rayos.
+func _feed_explosion(c: Vector2, col: Color) -> void:
+	_canvas.draw_circle(c, 3.5, col, true, -1.0, true)
+	_canvas.draw_arc(c, 6.0, 0.0, TAU, 20, Color(col, col.a * 0.6), 1.2, true)
+	for k in 6:
+		var d := Vector2.from_angle(k * TAU / 6.0)
+		_canvas.draw_line(c + d * 7.5, c + d * 10.0, col, 1.4, true)
+
+## Más / menos dentro de un círculo.
+func _feed_sign(c: Vector2, plus: bool, col: Color) -> void:
+	_canvas.draw_arc(c, 7.5, 0.0, TAU, 24, col, 1.3, true)
+	_canvas.draw_line(c + Vector2(-4, 0), c + Vector2(4, 0), col, 1.6, true)
+	if plus:
+		_canvas.draw_line(c + Vector2(0, -4), c + Vector2(0, 4), col, 1.6, true)

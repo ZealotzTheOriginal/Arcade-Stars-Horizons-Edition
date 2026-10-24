@@ -102,6 +102,7 @@ func _initialize() -> void:
 	_extra_checks()
 	_final_checks()
 	_v4_checks()
+	_v5_checks()
 	print("RESULT: %s" % ("ALL PASSED" if failures == 0 else "%d FAILED" % failures))
 	quit(1 if failures else 0)
 
@@ -289,3 +290,49 @@ func _v4_checks() -> void:
 	_input_for(le, 2, PI)
 	le.tick(1.0 / Config.TICK_RATE)
 	_check("firing exposes you to everyone", le.can_see(2, 1))
+
+## 0.3: gemas al morir, registro, ceguera al morir, nada fuera del mapa, nave quieta guiando el misil.
+func _v5_checks() -> void:
+	const PU = preload("res://lurk/shared/powerups.gd")
+	var l = _setup()
+	l._apply_powerup(1, PU.Kind.RADAR)
+	l._apply_powerup(1, PU.Kind.EXPLOSIVE)
+	var before: int = l.gems.size()
+	l.players[1]["invuln_until"] = 0.0
+	l._damage(1, 5.0, 0, "crash")
+	# Radar y Carga Explosiva: 2 mejoras -> 3 + 2·2 = 7 gemas
+	_check("death drops 3 + 2 per upgrade", l.gems.size() - before == 3 + 2 * 2, str(l.gems.size() - before))
+	_check("crash death is logged as crashed", l.feed.any(func(f): return f["kind"] == l.Feed.CRASH and f["a"] == 1))
+	_check("dead player sees nothing", l._sources(1)["circles"].is_empty())
+	var l2 = _setup()
+	_input_for(l2, 2, PI, true)
+	_input_for(l2, 1, 0.0)
+	l2.tick(1.0 / Config.TICK_RATE)
+	_ticks(l2, 15)
+	_ticks(l2, 10)
+	_input_for(l2, 2, PI, true)
+	_input_for(l2, 1, 0.0)
+	l2.tick(1.0 / Config.TICK_RATE)
+	_ticks(l2, 15)
+	_check("kill is logged with killer and victim", l2.feed.any(func(f): return f["kind"] == l2.Feed.KILL and f["a"] == 2 and f["b"] == 1))
+	_check("joins are logged", l2.feed.any(func(f): return f["kind"] == l2.Feed.JOIN and f["a"] == 1) and l2.feed.any(func(f): return f["kind"] == l2.Feed.JOIN and f["a"] == 2))
+	# Nada fuera del mapa
+	var lm = _setup()
+	lm.gems[0]["pos"] = Vector2(-50, lm.size + 80)
+	lm._push_items_out()
+	var gp: Vector2 = lm.gems[0]["pos"]
+	_check("gems kept inside the map", gp.x >= 0.0 and gp.y <= lm.size)
+	lm._drop_gems(Vector2(5, 5), 10, 200.0)
+	_check("dropped gems inside the map", lm.gems.all(func(g): return g["pos"].x > 0.0 and g["pos"].y > 0.0 and g["pos"].x < lm.size and g["pos"].y < lm.size))
+	# Guiando el misil la nave no gira
+	var ms = _setup()
+	ms._apply_powerup(1, PU.Kind.REDEEMER)
+	seqs[1] += 1
+	ms.handle_input(1, {"s": seqs[1], "m": Vector2.ZERO, "a": 0.5, "ms": true})
+	_input_for(ms, 2, PI)
+	ms.tick(1.0 / Config.TICK_RATE)
+	seqs[1] += 1
+	ms.handle_input(1, {"s": seqs[1], "m": Vector2.ZERO, "a": 2.5})
+	_input_for(ms, 2, PI)
+	ms.tick(1.0 / Config.TICK_RATE)
+	_check("ship keeps its heading while steering", is_equal_approx(ms.players[1]["aim"], 0.5) and is_equal_approx(ms.missiles[0]["target_angle"], 2.5))
